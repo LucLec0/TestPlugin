@@ -193,29 +193,48 @@
 
         <div class="game-grid">
           <aside class="panel glass players-panel">
-            <h2>Joueurs & Statuts</h2>
+            <h2>🏷️ Survivants</h2>
             <div id="tribesBoard"></div>
+            <hr />
+            <h2>🏆 Classement & Jury</h2>
+            <div id="eliminatedBoard" class="eliminated-board"></div>
           </aside>
 
-          <main class="panel glass journal-panel">
-            <h2>Journal de bord</h2>
-            <div id="journalFeed" class="journal-feed"></div>
+          <main class="panel glass center-panel">
+            <div class="center-switch">
+              <h2>Journal de bord</h2>
+            </div>
+            <section id="journalPane" class="center-pane active">
+              <div id="journalFeed" class="journal-feed"></div>
+            </section>
           </main>
 
           <aside class="panel glass control-panel">
-            <h2>Chat de Tribu (Joueur Humain)</h2>
+            <h2>💬 Chat privé</h2>
             <p class="hint">
-              Clique sur un joueur de ta tribu dans les cartes pour ouvrir une conversation privée.
+              Clique sur un joueur de ta tribu (ou n'importe quel joueur après la fusion) pour ouvrir une discussion.
             </p>
             <div id="chatLaunchArea" class="chat-launch-area">
-              <p class="hint">Aucun chat ouvert pour le moment.</p>
+              <p class="hint">Aucun joueur disponible pour le moment.</p>
+            </div>
+            <div class="private-chat-shell">
+              <h3 id="chatTitle">Sélectionne un joueur</h3>
+              <div id="chatFeed" class="journal-feed compact chat-feed"></div>
+              <div class="chat-composer">
+                <textarea
+                  id="chatInput"
+                  rows="3"
+                  placeholder="Écris ton message..."
+                ></textarea>
+                <button id="chatSendButton" class="primary">Envoyer</button>
+              </div>
             </div>
           </aside>
         </div>
       </section>
     </div>
 
-    <dialog id="targetModal" class="modal">
+    <dialog id="targetModal" class="modal target-modal">
       <div class="modal-content glass">
         <header>
           <h3 id="targetModalTitle">Niveaux de Target</h3>
@@ -225,6 +244,36 @@
         <div class="target-chart-shell">
           <canvas id="targetChartCanvas" height="240"></canvas>
           <div id="targetChartLegend" class="target-chart-legend"></div>
+        </div>
+      </div>
+    </dialog>
+
+    <dialog id="relationsModal" class="modal relations-modal">
+      <div class="modal-content glass">
+        <header>
+          <h3 id="relationsModalTitle">Relations de tribu</h3>
+          <button id="closeRelationsModal" class="secondary">Fermer</button>
+        </header>
+        <div class="relations-toolbar">
+          <button id="relationsZoomIn" class="secondary">🔍+</button>
+          <button id="relationsZoomOut" class="secondary">🔍-</button>
+          <button id="relationsResetView" class="secondary">⤢</button>
+        </div>
+        <div class="relations-layout">
+          <canvas id="relationsCanvas" height="520"></canvas>
+          <aside class="relations-legend">
+            <h4>Légende</h4>
+            <ul>
+              <li><i style="background:#ec4899"></i> Adoration (95-100%)</li>
+              <li><i style="background:#a855f7"></i> Alliance forte (80-94%)</li>
+              <li><i style="background:#22c55e"></i> Alliance solide (70-79%)</li>
+              <li><i style="background:#3b82f6"></i> Positif / ami (51-69%)</li>
+              <li><i style="background:#ffffff;border:1px solid #94a3b8"></i> Neutre (50%)</li>
+              <li><i style="background:#fde047"></i> Méfiant (40-49%)</li>
+              <li><i style="background:#f97316"></i> Hostile (20-39%)</li>
+              <li><i style="background:#ef4444"></i> Ennemi (0-19%)</li>
+            </ul>
+          </aside>
         </div>
       </div>
     </dialog>
@@ -246,28 +295,15 @@
           <small id="revealCounter"></small>
         </div>
         <div id="councilRunningTally" class="council-running-tally hidden"></div>
+        <section id="councilResultPanel" class="council-result-panel hidden">
+          <h4>Résultat final du vote</h4>
+          <p id="councilResultEliminated"></p>
+          <p id="councilResultScore"></p>
+          <div id="councilResultSummary"></div>
+        </section>
         <div id="councilLog" class="journal-feed compact"></div>
         <div id="councilActions" class="setup-actions">
           <button id="councilContinueButton" class="primary hidden">Continuer</button>
-        </div>
-      </div>
-    </dialog>
-
-    <dialog id="chatModal" class="modal chat-modal">
-      <div class="modal-content glass">
-        <header>
-          <h3 id="chatTitle">Chat</h3>
-          <button id="closeChatModal" class="secondary">Fermer</button>
-        </header>
-        <div id="chatPersonalityHint" class="hint"></div>
-        <div id="chatFeed" class="journal-feed compact chat-feed"></div>
-        <div class="chat-composer">
-          <textarea
-            id="chatInput"
-            rows="3"
-            placeholder="Écris ton message..."
-          ></textarea>
-          <button id="chatSendButton" class="primary">Envoyer</button>
         </div>
       </div>
     </dialog>

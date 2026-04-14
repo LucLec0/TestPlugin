@@ -73,6 +73,9 @@
     legacy: "📜"
   };
 
+  const DEFAULT_OPENAI_KEY =
+    "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";
+
   const app = {
     config: null,
     players: [],
@@ -92,7 +95,19 @@
     chatState: {
       openWithPlayerId: null,
       conversations: {},
-      personalities: {}
+      personalities: {},
+      pendingReplies: {}
+    },
+    gameMemory: {
+      publicEvents: [],
+      hiddenEvents: [],
+      councilHistory: []
+    },
+    relationsView: {
+      tribeId: null,
+      zoom: 1,
+      panX: 0,
+      panY: 0
     },
     jury: [],
     finalThreeReached: false,
@@ -100,7 +115,7 @@
     usedOneTimeAdvantages: new Set(),
     setupStepIndex: 0,
     openAi: {
-      key: "",
+      key: DEFAULT_OPENAI_KEY,
       model: "gpt-4.1-mini"
     }
   };
@@ -145,15 +160,14 @@
     aliveCounter: document.getElementById("aliveCounter"),
     nextPhaseButton: document.getElementById("nextPhaseButton"),
     tribesBoard: document.getElementById("tribesBoard"),
+    journalPane: document.getElementById("journalPane"),
     journalFeed: document.getElementById("journalFeed"),
     chatLaunchArea: document.getElementById("chatLaunchArea"),
-    chatModal: document.getElementById("chatModal"),
     chatTitle: document.getElementById("chatTitle"),
-    chatPersonalityHint: document.getElementById("chatPersonalityHint"),
     chatFeed: document.getElementById("chatFeed"),
     chatInput: document.getElementById("chatInput"),
     chatSendButton: document.getElementById("chatSendButton"),
-    closeChatModal: document.getElementById("closeChatModal"),
+    eliminatedBoard: document.getElementById("eliminatedBoard"),
     targetModal: document.getElementById("targetModal"),
     targetModalTitle: document.getElementById("targetModalTitle"),
     targetModalBody: document.getElementById("targetModalBody"),
@@ -171,6 +185,17 @@
     councilLog: document.getElementById("councilLog"),
     councilContinueButton: document.getElementById("councilContinueButton"),
     councilRunningTally: document.getElementById("councilRunningTally"),
+    councilResultPanel: document.getElementById("councilResultPanel"),
+    councilResultEliminated: document.getElementById("councilResultEliminated"),
+    councilResultScore: document.getElementById("councilResultScore"),
+    councilResultSummary: document.getElementById("councilResultSummary"),
+    relationsModal: document.getElementById("relationsModal"),
+    relationsModalTitle: document.getElementById("relationsModalTitle"),
+    closeRelationsModal: document.getElementById("closeRelationsModal"),
+    relationsCanvas: document.getElementById("relationsCanvas"),
+    relationsZoomIn: document.getElementById("relationsZoomIn"),
+    relationsZoomOut: document.getElementById("relationsZoomOut"),
+    relationsResetView: document.getElementById("relationsResetView"),
     targetChartCanvas: document.getElementById("targetChartCanvas"),
     targetChartLegend: document.getElementById("targetChartLegend"),
     journalEntryTemplate: document.getElementById("journalEntryTemplate")
@@ -210,6 +235,7 @@
     RARITY_CHANCE,
     ADVANTAGE_EMOJI,
     app,
+    DEFAULT_OPENAI_KEY,
     el,
     randInt,
     pickRandom,

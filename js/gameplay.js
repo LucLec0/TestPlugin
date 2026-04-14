@@ -26,6 +26,7 @@
       social: randInt(35, 85),
       strategy: randInt(35, 85),
       challenge: randInt(35, 85),
+      energy: randInt(50, 100),
       trust: {},
       alliances: new Set(),
       advantages: [],
@@ -38,11 +39,8 @@
     alivePlayers.forEach((player) => {
       alivePlayers.forEach((other) => {
         if (player.id === other.id) return;
-        const value = randInt(-20, 35);
+        const value = 0;
         player.trust[other.id] = value;
-        if (value > 25 && chance(0.25)) {
-          player.alliances.add(other.id);
-        }
       });
     });
   }
@@ -70,21 +68,6 @@
     }
   }
 
-  function logCampChat(emoji, author, tribeId, text, episodeOverride = app.episode) {
-    app.chatState.campFeed.push({
-      id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
-      emoji,
-      author,
-      tribeId,
-      episode: episodeOverride,
-      text
-    });
-    if (app.chatState.campFeed.length > 300) {
-      app.chatState.campFeed = app.chatState.campFeed.slice(-300);
-    }
-    renderCampChatFeed();
-  }
-
   function addCouncilLog(text) {
     const node = document.createElement("article");
     node.className = "journal-entry";
@@ -97,46 +80,259 @@
     el.councilLog.scrollTop = 0;
   }
 
-  function getCampFeedVisibleTribeIds() {
-    const human = getPlayerById(app.humanPlayerId);
-    if (!human || !human.alive) {
-      return app.merged ? [app.mergeTribe?.id].filter(Boolean) : app.tribes.map((t) => t.id);
+  function appendPublicMemory(memoryEntry) {
+    app.gameMemory.publicEvents.push(memoryEntry);
+    if (app.gameMemory.publicEvents.length > 240) {
+      app.gameMemory.publicEvents = app.gameMemory.publicEvents.slice(-240);
     }
-    if (app.merged) {
-      return [app.mergeTribe?.id || human.tribeId].filter(Boolean);
-    }
-    return [human.tribeId];
   }
 
-  function renderCampChatFeed() {
-    if (!el.campChatFeed) return;
-    const visibleTribes = new Set(getCampFeedVisibleTribeIds());
-    const messages = app.chatState.campFeed.filter((msg) => visibleTribes.has(msg.tribeId));
-    el.campChatFeed.innerHTML = "";
-    if (!messages.length) {
-      const empty = document.createElement("article");
-      empty.className = "journal-entry";
-      empty.innerHTML =
-        "<header><span class=\"meta\">🏕️ Chat de camp</span></header><p>Aucune discussion de camp pour le moment.</p>";
-      el.campChatFeed.appendChild(empty);
-      return;
+  function appendHiddenMemory(memoryEntry) {
+    app.gameMemory.hiddenEvents.push(memoryEntry);
+    if (app.gameMemory.hiddenEvents.length > 520) {
+      app.gameMemory.hiddenEvents = app.gameMemory.hiddenEvents.slice(-520);
     }
-    messages.forEach((msg) => {
-      const item = document.createElement("article");
-      item.className = "journal-entry";
-      item.innerHTML = `<header><span class="meta">${msg.emoji} ${escapeHtml(msg.author)} • Épisode ${msg.episode}</span></header><p>${styleTextForJournal(msg.text)}</p>`;
-      el.campChatFeed.appendChild(item);
+  }
+
+  function registerPrivateChatMessage(playerId, role, text) {
+    appendHiddenMemory({
+      type: "private-chat",
+      playerId,
+      role,
+      text,
+      episode: app.episode,
+      phase: getCurrentPhase()
     });
-    el.campChatFeed.scrollTop = el.campChatFeed.scrollHeight;
   }
 
-  function switchCenterPane(mode) {
-    if (!el.journalPane || !el.campChatPane || !el.showJournalTab || !el.showCampChatTab) return;
-    const showJournal = mode !== "camp";
-    el.journalPane.classList.toggle("active", showJournal);
-    el.campChatPane.classList.toggle("active", !showJournal);
-    el.showJournalTab.classList.toggle("active", showJournal);
-    el.showCampChatTab.classList.toggle("active", !showJournal);
+  function gatherPublicMemory(limit = 14) {
+    return app.gameMemory.publicEvents.slice(-limit);
+  }
+
+  function gatherHiddenMemoryForPlayer(playerId, limit = 20) {
+    return app.gameMemory.hiddenEvents.filter((entry) => !entry.playerId || entry.playerId === playerId).slice(-limit);
+  }
+
+  function describePlayerStateForPrompt(player, perspectivePlayer = null) {
+    if (!player) return "Inconnu";
+    const trustVsPerspective =
+      perspectivePlayer && perspectivePlayer.id !== player.id ? perspectivePlayer.trust[player.id] ?? 0 : null;
+    const trustPercent = trustVsPerspective === null ? null : Math.round((trustVsPerspective + 100) / 2);
+    return `${player.name} [tribu=${getTribeName(player.tribeId)}, cible=${Math.round(
+      player.target
+    )}, énergie=${Math.round(player.energy ?? 0)}, immunisé=${player.immunized ? "oui" : "non"}${
+      trustPercent === null ? "" : `, confiance=${trustPercent}%`
+    }, avantages=${(player.advantages || []).map((a) => a.type).join("/") || "aucun"}]`;
+  }
+
+  function buildStrategicContextForChat(human, aiPlayer) {
+    const tribePlayers = getAliveByTribe(aiPlayer.tribeId).filter((p) => p.id !== aiPlayer.id);
+    const keyThreats = [...tribePlayers].sort((a, b) => b.target - a.target).slice(0, 3);
+    const trusted = [...tribePlayers]
+      .sort((a, b) => (aiPlayer.trust[b.id] ?? 0) - (aiPlayer.trust[a.id] ?? 0))
+      .slice(0, 3);
+    const distrusted = [...tribePlayers]
+      .sort((a, b) => (aiPlayer.trust[a.id] ?? 0) - (aiPlayer.trust[b.id] ?? 0))
+      .slice(0, 3);
+    const allianceNames = [...aiPlayer.alliances]
+      .map((id) => getPlayerById(id))
+      .filter(Boolean)
+      .map((p) => p.name)
+      .slice(0, 6);
+    return {
+      keyThreats,
+      trusted,
+      distrusted,
+      allianceNames,
+      recentCouncil: app.gameMemory.councilHistory.slice(-4),
+      publicMemory: gatherPublicMemory(16),
+      hiddenMemory: gatherHiddenMemoryForPlayer(aiPlayer.id, 24),
+      humanState: describePlayerStateForPrompt(human, aiPlayer),
+      aiState: describePlayerStateForPrompt(aiPlayer),
+      pendingUnanswered: app.chatState.pendingReplies[aiPlayer.id] || 0
+    };
+  }
+
+  function applyRelationshipShift(a, b, trustDeltaA, trustDeltaB, targetDeltaA = 0, targetDeltaB = 0) {
+    increaseTrust(a, b, trustDeltaA);
+    increaseTrust(b, a, trustDeltaB);
+    if (targetDeltaA) applyTargetDelta(a, targetDeltaA);
+    if (targetDeltaB) applyTargetDelta(b, targetDeltaB);
+    maybeCreateAlliance(a, b);
+    maybeBreakAlliance(a, b);
+  }
+
+  function applyEnergyDelta(player, delta) {
+    if (!player) return;
+    player.energy = clamp((player.energy ?? 60) + delta, 0, 100);
+  }
+
+  function logCouncilHistoryEntry(councilState, eliminated, scoreboardText) {
+    const votes = councilState.votes.map((vote) => {
+      const voter = getPlayerById(vote.voterId)?.name || "Inconnu";
+      const target = getPlayerById(vote.targetId)?.name || "Inconnu";
+      return `${voter} -> ${target}${vote.source === "bonus" ? " (bonus)" : ""}`;
+    });
+    app.gameMemory.councilHistory.push({
+      episode: app.episode,
+      tribeId: councilState.tribeId,
+      eliminatedId: eliminated?.id || null,
+      eliminatedName: eliminated?.name || "Inconnu",
+      scoreboardText,
+      votes
+    });
+    if (app.gameMemory.councilHistory.length > 140) {
+      app.gameMemory.councilHistory = app.gameMemory.councilHistory.slice(-140);
+    }
+  }
+
+  function degradePendingReplies() {
+    const human = getPlayerById(app.humanPlayerId);
+    if (!human || !human.alive) return;
+    Object.entries(app.chatState.pendingReplies || {}).forEach(([playerId, count]) => {
+      if (!count || count <= 0) return;
+      const ai = getPlayerById(playerId);
+      if (!ai || !ai.alive) return;
+      if (!app.merged && ai.tribeId !== human.tribeId) return;
+      const penalty = Math.min(2 + count, 7);
+      increaseTrust(ai, human, -penalty);
+      if (count >= 2) applyTargetDelta(human, 1);
+    });
+  }
+
+  function runGeneratedPhaseEvents(label, tribeScopeIds = null) {
+    const alive = getAlivePlayers();
+    if (alive.length < 2) return;
+    const base = Math.max(5, Math.min(15, Math.floor(alive.length / 1.4)));
+    const eventsCount = randInt(base, Math.min(15, base + 3));
+    const possibleTribes = tribeScopeIds?.length ? tribeScopeIds : [...new Set(alive.map((p) => p.tribeId))];
+    const publicTemplates = [
+      {
+        emoji: "💥",
+        title: "Grosse dispute",
+        text: (a, b) => `${a.name} et ${b.name} se disputent violemment devant le camp.`,
+        effect: (a, b) => {
+          applyRelationshipShift(a, b, -18, -16, 2, 2);
+          applyEnergyDelta(a, -8);
+          applyEnergyDelta(b, -7);
+        }
+      },
+      {
+        emoji: "📢",
+        title: "Annonce risquée",
+        text: (a, b) => `${a.name} annonce publiquement vouloir voter contre ${b.name}.`,
+        effect: (a, b) => {
+          applyRelationshipShift(a, b, -12, -20, 2, 4);
+          applyTargetDelta(a, 3);
+          applyEnergyDelta(a, -5);
+        }
+      },
+      {
+        emoji: "🤝",
+        title: "Promesse publique",
+        text: (a, b) => `${a.name} promet publiquement de protéger ${b.name} jusqu'au prochain vote.`,
+        effect: (a, b) => {
+          applyRelationshipShift(a, b, 12, 9, 1, -1);
+          applyEnergyDelta(a, -2);
+          applyEnergyDelta(b, 2);
+        }
+      }
+    ];
+    const hiddenTemplates = [
+      {
+        title: "Pacte secret",
+        text: (a, b) => `${a.name} et ${b.name} concluent un pacte discret.`,
+        effect: (a, b) => applyRelationshipShift(a, b, 10, 10, -1, -1)
+      },
+      {
+        title: "Rumeur ciblée",
+        text: (a, b, c) => `${a.name} souffle à ${b.name} que ${c.name} prépare un blindside.`,
+        effect: (a, b, c) => {
+          applyRelationshipShift(a, b, 7, 6, 0, 0);
+          increaseTrust(b, c, -10);
+          applyTargetDelta(c, 3);
+        }
+      },
+      {
+        title: "Négociation de vote",
+        text: (a, b) => `${a.name} et ${b.name} alignent discrètement leur prochain vote.`,
+        effect: (a, b) => applyRelationshipShift(a, b, 8, 8, 1, 1)
+      },
+      {
+        title: "Mensonge stratégique",
+        text: (a, b) => `${a.name} ment à ${b.name} pour détourner les soupçons.`,
+        effect: (a, b) => {
+          increaseTrust(b, a, -8);
+          applyTargetDelta(a, 1);
+          applyTargetDelta(b, 1);
+        }
+      }
+    ];
+    for (let i = 0; i < eventsCount; i += 1) {
+      const tribeId = pickRandom(possibleTribes);
+      const tribePlayers = alive.filter((p) => p.tribeId === tribeId);
+      if (tribePlayers.length < 2) continue;
+      const actor = pickRandom(tribePlayers);
+      const target = pickRandom(tribePlayers.filter((p) => p.id !== actor.id));
+      if (!actor || !target) continue;
+      const isPublic = chance(0.25);
+      if (isPublic) {
+        const tpl = pickRandom(publicTemplates);
+        tpl.effect(actor, target);
+        const txt = tpl.text(actor, target);
+        logJournal(tpl.emoji, `${label} • ${tpl.title}`, txt);
+        appendPublicMemory({
+          type: "public-event",
+          title: tpl.title,
+          text: txt,
+          episode: app.episode,
+          phase: getCurrentPhase()
+        });
+        continue;
+      }
+      const tpl = pickRandom(hiddenTemplates);
+      const third = pickRandom(tribePlayers.filter((p) => p.id !== actor.id && p.id !== target.id));
+      tpl.effect(actor, target, third || target);
+      appendHiddenMemory({
+        type: "hidden-event",
+        playerId: actor.id,
+        title: tpl.title,
+        text: tpl.text(actor, target, third || target),
+        episode: app.episode,
+        phase: getCurrentPhase()
+      });
+    }
+  }
+
+  function renderCouncilResultPanel(councilState, eliminated) {
+    if (!el.councilResultPanel || !el.councilResultEliminated || !el.councilResultScore || !el.councilResultSummary) return;
+    const countedEntries = Object.entries(councilState.tally?.counted || {})
+      .map(([playerId, count]) => ({ player: getPlayerById(playerId), count }))
+      .filter((entry) => entry.player)
+      .sort((a, b) => b.count - a.count);
+    const scoreText = countedEntries.length
+      ? countedEntries.map((entry) => String(entry.count)).join("-")
+      : "0";
+    el.councilResultPanel.classList.remove("hidden");
+    el.councilResultEliminated.textContent = `Éliminé : ${eliminated?.name || "Inconnu"}`;
+    el.councilResultScore.textContent = `Score final : ${scoreText}`;
+    const summary = councilState.votes
+      .map((vote) => {
+        const voter = getPlayerById(vote.voterId)?.name || "Inconnu";
+        const target = getPlayerById(vote.targetId)?.name || "Inconnu";
+        const marker = vote.source === "bonus" ? " (bonus)" : "";
+        return `<li><strong>${escapeHtml(voter)}</strong> → ${escapeHtml(target)}${marker}</li>`;
+      })
+      .join("");
+    el.councilResultSummary.innerHTML = `<ul class="council-result-summary-list">${summary}</ul>`;
+  }
+
+  function hideCouncilResultPanel() {
+    if (!el.councilResultPanel || !el.councilResultEliminated || !el.councilResultScore || !el.councilResultSummary) return;
+    el.councilResultPanel.classList.add("hidden");
+    el.councilResultEliminated.textContent = "";
+    el.councilResultScore.textContent = "";
+    el.councilResultSummary.innerHTML = "";
   }
 
   function clearJournalEntryHighlights() {
@@ -629,7 +825,12 @@
       .map(
         (player) => `
         <button class="chat-launch-card" data-chat-player-id="${player.id}" style="--tribe-color:${getTribeColor(player.tribeId)}">
-          <span class="name">${player.name}</span>
+          <span class="name">${escapeHtml(player.name)}</span>
+          ${
+            (app.chatState.pendingReplies[player.id] || 0) > 0
+              ? `<span class="player-square-unread">✉ ${app.chatState.pendingReplies[player.id]}</span>`
+              : ""
+          }
           <small>${getTribeName(player.tribeId)}</small>
         </button>
       `
@@ -688,19 +889,45 @@
       return `${aiPlayer.name} : Je note ce que tu dis. On garde ça entre nous pour l'instant.`;
     }
     try {
-      const conversation = getConversation(aiPlayer.id).slice(-8);
+      const conversation = getConversation(aiPlayer.id).slice(-14);
       const history = conversation
         .map((msg) => `${msg.author}: ${msg.text}`)
         .reverse()
         .join("\n");
+      const strategicContext = buildStrategicContextForChat(human, aiPlayer);
+      const memoryPublic = strategicContext.publicMemory.map((e) => `- ${e.title}: ${e.text}`).join("\n");
+      const memoryHidden = strategicContext.hiddenMemory.map((e) => `- ${e.title}: ${e.text}`).join("\n");
+      const threatNames = strategicContext.keyThreats.map((p) => `${p.name}(${Math.round(p.target)}%)`).join(", ");
+      const trustedNames = strategicContext.trusted.map((p) => p.name).join(", ");
+      const distrustedNames = strategicContext.distrusted.map((p) => p.name).join(", ");
+      const councilContext = strategicContext.recentCouncil
+        .map(
+          (c) =>
+            `E${c.episode}: éliminé=${c.eliminatedName}, score=${c.scoreboardText}, votes=${(c.votes || []).slice(0, 6).join(" ; ")}`
+        )
+        .join("\n");
       const prompt = `Tu joues ${aiPlayer.name} dans un simulateur Survivor.
 Personnalité: ${personality}.
-Tu parles au joueur humain ${human.name}.
-Règles connues: tribus, alliances, votes, conseil, immunité.
-Contexte récent:
+Objectif principal: gagner la partie. Tu n'es pas loyal par défaut au joueur humain.
+Tu peux mentir, manipuler, dire la vérité, trahir, proposer des plans clairs.
+Tu dois tenir compte des conversations passées, des votes, des avantages, des immunités et des liens.
+Contexte joueur humain: ${strategicContext.humanState}
+Contexte toi (IA): ${strategicContext.aiState}
+Menaces actuelles: ${threatNames || "aucune"}
+Joueurs que tu apprécies: ${trustedNames || "aucun"}
+Joueurs que tu suspectes: ${distrustedNames || "aucun"}
+Alliances connues: ${strategicContext.allianceNames.join(", ") || "aucune"}
+Messages envoyés sans réponse par l'humain: ${strategicContext.pendingUnanswered}
+Conseils récents:
+${councilContext || "- aucun"}
+Événements publics récents:
+${memoryPublic || "- aucun"}
+Événements cachés connus:
+${memoryHidden || "- aucun"}
+Historique privé avec l'humain:
 ${history || "Aucun historique."}
 Message reçu: ${cleanUserMessage}
-Réponds en français en 1 à 3 phrases, dans le rôle, avec logique stratégique et sociale.`;
+Réponds en français en 1 à 4 phrases, utile, stratégique et contextuelle. Si possible, prends position claire. Tu peux faire des erreurs, mais reste cohérent.`;
       const response = await fetch("https://api.openai.com/v1/responses", {
         method: "POST",
         headers: {
@@ -738,12 +965,15 @@ Réponds en français en 1 à 3 phrases, dans le rôle, avec logique stratégiqu
     ];
     const text = pickRandom(suggestions);
     conversation.push({ role: "ai", author: aiPlayer.name, text });
+    registerPrivateChatMessage(playerId, "ai", text);
     increaseTrust(aiPlayer, human, 3);
     applyTargetDelta(human, 1);
+    app.chatState.pendingReplies[playerId] = (app.chatState.pendingReplies[playerId] || 0) + 1;
+    renderTribesBoard();
+    renderChatLaunchArea();
     if (app.chatState.openWithPlayerId === playerId) {
       renderChatFeed(playerId);
     }
-    logCampChat("💬", aiPlayer.name, aiPlayer.tribeId, text);
     logJournal("💬", "Chat IA", `${aiPlayer.name} envoie un message privé à ${human.name}.`);
   }
 
@@ -760,13 +990,19 @@ Réponds en français en 1 à 3 phrases, dans le rôle, avec logique stratégiqu
     }
     const conversation = getConversation(targetId);
     conversation.push({ role: "human", author: human.name, text: userMessage });
+    registerPrivateChatMessage(targetId, "human", userMessage);
+    app.chatState.pendingReplies[targetId] = 0;
+    renderTribesBoard();
+    renderChatLaunchArea();
     if (el.chatInput) el.chatInput.value = "";
     renderChatFeed(targetId);
-    logCampChat("🗨️", human.name, human.tribeId, `${human.name} à ${aiPlayer.name}: ${userMessage}`);
     const reply = await buildAiChatReply(human, aiPlayer, userMessage);
     conversation.push({ role: "ai", author: aiPlayer.name, text: reply });
+    registerPrivateChatMessage(targetId, "ai", reply);
+    app.chatState.pendingReplies[targetId] = (app.chatState.pendingReplies[targetId] || 0) + 1;
+    renderTribesBoard();
+    renderChatLaunchArea();
     renderChatFeed(targetId);
-    logCampChat("💬", aiPlayer.name, aiPlayer.tribeId, `${aiPlayer.name}: ${reply}`);
     applyChatImpact(human, aiPlayer, userMessage, reply);
     logJournal("💬", "Chat", `${human.name} discute avec ${aiPlayer.name}.`);
   }
@@ -780,8 +1016,11 @@ Réponds en français en 1 à 3 phrases, dans le rôle, avec logique stratégiqu
       return;
     }
     app.chatState.openWithPlayerId = playerId;
+    app.chatState.pendingReplies[playerId] = 0;
     if (el.chatTitle) el.chatTitle.textContent = `Chat avec ${target.name}`;
     renderChatFeed(playerId);
+    renderTribesBoard();
+    renderChatLaunchArea();
   }
 
   function getIdolInGame() {
@@ -871,6 +1110,7 @@ Réponds en français en 1 à 3 phrases, dans le rôle, avec logique stratégiqu
   function runCampLifePhase(label) {
     const alive = getAlivePlayers();
     if (!alive.length) return;
+    runGeneratedPhaseEvents(label);
 
     const interactions = randInt(4, 7);
     for (let i = 0; i < interactions; i += 1) {
@@ -887,7 +1127,6 @@ Réponds en français en 1 à 3 phrases, dans le rôle, avec logique stratégiqu
           label,
           `${actor.name} et ${target.name} partagent une discussion stratégique autour du feu de camp.`
         );
-        logCampChat("🗨️", actor.name, actor.tribeId, `${actor.name} échange une discussion stratégique avec ${target.name}.`);
       } else if (roll < 0.66) {
         increaseTrust(actor, target, -randInt(7, 16));
         maybeBreakAlliance(actor, target);
@@ -897,13 +1136,11 @@ Réponds en français en 1 à 3 phrases, dans le rôle, avec logique stratégiqu
           label,
           `${actor.name} diffuse des doutes sur ${target.name}. La méfiance progresse dans la tribu.`
         );
-        logCampChat("⚡", actor.name, actor.tribeId, `${actor.name} sème le doute sur ${target.name} auprès de la tribu.`);
       } else {
         const spread = alive.filter((p) => p.tribeId === actor.tribeId && p.id !== actor.id);
         spread.forEach((p) => increaseTrust(p, actor, randInt(1, 5)));
         applyTargetDelta(actor, randInt(2, 5));
         logJournal("📣", label, `${actor.name} prend de la place socialement et devient plus visible.`);
-        logCampChat("📣", actor.name, actor.tribeId, `${actor.name} anime le camp et prend de la place socialement.`);
       }
     }
 
@@ -1015,6 +1252,7 @@ Réponds en français en 1 à 3 phrases, dans le rôle, avec logique stratégiqu
       logJournal("🧠", "Discussions", "Aucun conseil prévu, les joueurs réajustent calmement leur position.");
       return;
     }
+    runGeneratedPhaseEvents("Discussions pré-conseil", app.councilQueue);
     app.councilQueue.forEach((tribeId) => {
       const atRisk = getAliveByTribe(tribeId).filter((p) => !p.immunized);
       if (!atRisk.length) return;
@@ -1056,6 +1294,12 @@ Réponds en français en 1 à 3 phrases, dans le rôle, avec logique stratégiqu
         `Les tribus fusionnent dans la nouvelle tribu ${app.mergeTribe.name}. La compétition devient individuelle.`
       );
     }
+  }
+
+  function getCurrentImmunityStateForPrompt(player) {
+    if (!player || !player.alive) return "éliminé";
+    if (!player.immunized) return "vulnérable";
+    return app.merged ? "immunité individuelle" : "immunité tribale";
   }
 
   function renderCouncilRunningTally(tallyMap) {
@@ -1341,30 +1585,29 @@ Réponds en français en 1 à 3 phrases, dans le rôle, avec logique stratégiqu
     const legacyAdv = human.advantages.find((adv) => adv.type === "legacy");
     const legacyPlayableNow =
       Boolean(legacyAdv) && (legacyAdv.playableAt == null || legacyAdv.playableAt === getAlivePlayers().length);
-    const options = councilState.players
+    const optionsList = councilState.players
       .map((id) => getPlayerById(id))
-      .filter((p) => p && p.id !== human.id && !p.immunized)
-      .map((p) => `<option value="${p.id}">${escapeHtml(p.name)}</option>`)
-      .join("");
+      .filter((p) => p && p.id !== human.id && !p.immunized);
+    const options = optionsList.map((p) => `<option value="${p.id}">${escapeHtml(p.name)}</option>`).join("");
     if (!options) return null;
+    const hasDoubleVote = human.advantages.some((a) => a.type === "doubleVote");
+    const hasVoteBlock = human.advantages.some((a) => a.type === "voteBlock");
+    const hasStealVote = human.advantages.some((a) => a.type === "stealVote");
+    const hasIdol = human.advantages.some((a) => a.type === "idol");
+    const canUseAnyAdv = hasDoubleVote || hasVoteBlock || hasStealVote || hasIdol || legacyPlayableNow;
     return `
       <div class="human-council-box">
         <h4>Ton vote au conseil</h4>
         <label>Cible principale<select id="humanCouncilVoteTarget">${options}</select></label>
-        <label class="toggle"><input id="humanCouncilPlayDoubleVote" type="checkbox" ${
-          human.advantages.some((a) => a.type === "doubleVote") ? "" : "disabled"
-        } /> Jouer Double vote</label>
-        <label class="toggle"><input id="humanCouncilPlayVoteBlock" type="checkbox" ${
-          human.advantages.some((a) => a.type === "voteBlock") ? "" : "disabled"
-        } /> Jouer Annule vote</label>
+        ${
+          canUseAnyAdv
+            ? `
+        <label class="toggle"><input id="humanCouncilPlayDoubleVote" type="checkbox" ${hasDoubleVote ? "" : "disabled"} /> Jouer Double vote</label>
+        <label class="toggle"><input id="humanCouncilPlayVoteBlock" type="checkbox" ${hasVoteBlock ? "" : "disabled"} /> Jouer Annule vote</label>
         <label>Cible Annule vote<select id="humanCouncilVoteBlockTarget">${options}</select></label>
-        <label class="toggle"><input id="humanCouncilPlayStealVote" type="checkbox" ${
-          human.advantages.some((a) => a.type === "stealVote") ? "" : "disabled"
-        } /> Jouer Steal vote</label>
+        <label class="toggle"><input id="humanCouncilPlayStealVote" type="checkbox" ${hasStealVote ? "" : "disabled"} /> Jouer Steal vote</label>
         <label>Cible Steal vote<select id="humanCouncilStealVoteTarget">${options}</select></label>
-        <label class="toggle"><input id="humanCouncilPlayIdol" type="checkbox" ${
-          human.advantages.some((a) => a.type === "idol") ? "" : "disabled"
-        } /> Jouer Idole</label>
+        <label class="toggle"><input id="humanCouncilPlayIdol" type="checkbox" ${hasIdol ? "" : "disabled"} /> Jouer Idole</label>
         <label>Sur qui jouer l'idole
           <select id="humanCouncilIdolTarget">
             <option value="${human.id}">${escapeHtml(human.name)} (toi)</option>
@@ -1374,6 +1617,9 @@ Réponds en français en 1 à 3 phrases, dans le rôle, avec logique stratégiqu
         <label class="toggle"><input id="humanCouncilPlayLegacy" type="checkbox" ${
           legacyPlayableNow ? "" : "disabled"
         } /> Jouer Legacy</label>
+        `
+            : `<p class="hint">Aucun avantage disponible pour ce conseil.</p>`
+        }
         <button id="confirmHumanCouncilButton" class="primary">Valider mon plan</button>
       </div>
     `;
@@ -1631,6 +1877,7 @@ Réponds en français en 1 à 3 phrases, dans le rôle, avec logique stratégiqu
       el.councilRunningTally.classList.add("hidden");
       el.councilRunningTally.innerHTML = "";
     }
+    hideCouncilResultPanel();
     el.councilContinueButton.classList.remove("hidden");
     el.councilContinueButton.textContent = "Commencer le conseil";
     renderCouncilParticipants(councilState);
@@ -1827,6 +2074,7 @@ Réponds en français en 1 à 3 phrases, dans le rôle, avec logique stratégiqu
 
     if (!c.eliminatedId) {
       addCouncilLog("Impossible de déterminer un éliminé, le conseil est annulé.");
+      hideCouncilResultPanel();
       el.councilContinueButton.textContent = "Fermer";
       c.stage = 6;
       return;
@@ -1838,10 +2086,17 @@ Réponds en français en 1 à 3 phrases, dans le rôle, avec logique stratégiqu
     updateTargetAfterVote(c.votes, eliminated.id);
     app.councilOccurredThisEpisode = true;
 
+    const countedEntries = Object.entries(c.tally?.counted || {})
+      .map(([playerId, count]) => ({ player: getPlayerById(playerId), count }))
+      .filter((entry) => entry.player)
+      .sort((a, b) => b.count - a.count);
+    const scoreboardText = countedEntries.length ? countedEntries.map((entry) => String(entry.count)).join("-") : "0";
     addCouncilLog(`Éliminé: ${eliminated.name}${c.rocksResult ? " (Rocks)" : ""}.`);
     renderCouncilRunningTally(c.runningTally);
     const table = buildVoteTable(c.votes);
     el.councilLog.appendChild(table);
+    renderCouncilResultPanel(c, eliminated);
+    logCouncilHistoryEntry(c, eliminated, scoreboardText);
 
     logJournal(
       "🕯️",
@@ -1950,6 +2205,7 @@ Réponds en français en 1 à 3 phrases, dans le rôle, avec logique stratégiqu
     checkMergeTrigger();
     updateTopBar();
 
+    degradePendingReplies();
     if (phase === "returnFromCouncil") {
       runReturnFromCouncil();
     } else if (phase === "campLifeA") {
@@ -2000,8 +2256,7 @@ Réponds en français en 1 à 3 phrases, dans le rôle, avec logique stratégiqu
       openWithPlayerId: null,
       conversations: {},
       personalities: {},
-      campFeed: [],
-      campUnread: 0
+      pendingReplies: {}
     };
     app.journalCounter = 0;
     app.targetHistoryByEpisode = {};
@@ -2014,13 +2269,10 @@ Réponds en français en 1 à 3 phrases, dans le rôle, avec logique stratégiqu
     initializeRelations(app.players);
 
     el.journalFeed.innerHTML = "";
-    if (el.campChatFeed) el.campChatFeed.innerHTML = "";
     el.setupScreen.classList.remove("active");
     el.gameScreen.classList.add("active");
     renderTribesBoard();
     renderHumanTargetOptions();
-    renderCampChatFeed();
-    switchCenterPane("journal");
     updateTopBar();
     recordTargetSnapshot();
     logJournal(
@@ -2033,12 +2285,7 @@ Réponds en français en 1 à 3 phrases, dans le rôle, avec logique stratégiqu
   function bindGameEvents() {
     el.nextPhaseButton.addEventListener("click", runCurrentPhase);
     el.closeTargetModal.addEventListener("click", closeTargetModal);
-    if (el.showJournalTab) {
-      el.showJournalTab.addEventListener("click", () => switchCenterPane("journal"));
-    }
-    if (el.showCampChatTab) {
-      el.showCampChatTab.addEventListener("click", () => switchCenterPane("camp"));
-    }
+
     if (el.closeRelationsModal) {
       el.closeRelationsModal.addEventListener("click", closeRelationsModal);
     }

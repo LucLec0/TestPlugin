@@ -2,6 +2,7 @@
   const {
     DEFAULT_NAMES,
     DEFAULT_TRIBES,
+    DEFAULT_OPENAI_KEY,
     app,
     el,
     clamp
@@ -142,7 +143,7 @@
         legacyPlayableAt
       },
       openAi: {
-        key: el.openAiKey.value.trim(),
+        key: (el.openAiKey.value || DEFAULT_OPENAI_KEY).trim(),
         model: (el.openAiModel.value || "gpt-4.1-mini").trim()
       }
     };
@@ -305,11 +306,7 @@
       }
     }
 
-    if (!setup.openAi.key) {
-      addInfo("Aucune clé OpenAI fournie: la narration utilisera l'IA locale intégrée.");
-    } else {
-      addInfo(`OpenAI actif avec le modèle: ${setup.openAi.model}.`);
-    }
+    addInfo(`OpenAI actif avec le modèle: ${setup.openAi.model}.`);
     if (
       setup.advantages.idolEnabled === false &&
       setup.advantages.doubleVoteEnabled === false &&
@@ -439,7 +436,7 @@
       el.rarityStealVote.value = "veryRare";
       el.rarityLegacy.value = "veryRare";
       el.legacyPlayableAt.value = "7";
-      el.openAiKey.value = "";
+      el.openAiKey.value = DEFAULT_OPENAI_KEY;
       el.openAiModel.value = "gpt-4.1-mini";
       buildSetupEditors();
       syncSetupState();

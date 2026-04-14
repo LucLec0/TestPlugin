@@ -8,7 +8,7 @@
       (function autoRedirectFromFileProtocol() {
         if (window.location.protocol !== "file:") return;
         if (window.location.hash === "#no-redirect") return;
-        const target = "http://localhost:8787/";
+        const target = "http://localhost:8080/";
         try {
           const opened = window.open(target, "_self");
           if (!opened) {

@@ -16,11 +16,11 @@ chmod +x launch.sh
 Ensuite ouvre automatiquement:
 
 ```
-http://localhost:8787
+http://localhost:8080
 ```
 
 ## Pourquoi
 
 Le chat OpenAI passe par un proxy local (`/api/openai/chat`) pour eviter les erreurs `Failed to fetch` du navigateur.
 
-> Si tu ouvres `index.html` en double-clic (`file://`), une redirection automatique vers `http://localhost:8787` est tentee.
+> Si tu ouvres `index.html` en double-clic (`file://`), une redirection automatique vers `http://localhost:8080` est tentee.

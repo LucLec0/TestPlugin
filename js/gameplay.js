@@ -832,7 +832,7 @@
       logJournal(
         "⚠️",
         "OpenAI",
-        `Proxy OpenAI inaccessible (${escapeHtml(error?.message || "réseau")}). Lance le jeu via \"node app.js\" puis http://localhost:8787.`
+        `Proxy OpenAI inaccessible (${escapeHtml(error?.message || "réseau")}). Lance le jeu via \"node server.js\" puis http://localhost:8080.`
       );
       return "";
     }

@@ -4,6 +4,35 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Survivor Quantum Simulator</title>
+    <script>
+      (function autoRedirectFromFileProtocol() {
+        if (window.location.protocol !== "file:") return;
+        if (window.location.hash === "#no-redirect") return;
+        const target = "http://localhost:8787/";
+        try {
+          const opened = window.open(target, "_self");
+          if (!opened) {
+            // Some browsers block self open; fallback below.
+          }
+          setTimeout(function () {
+            if (window.location.protocol === "file:") {
+              const msg = [
+                "OpenAI ne fonctionne pas en ouverture directe du fichier (file://).",
+                "",
+                "Lance le serveur automatiquement :",
+                "- Windows : double-clique launch.bat",
+                "- Linux/macOS : ./launch.sh",
+                "",
+                "Puis ouvre : " + target
+              ].join("\n");
+              alert(msg);
+            }
+          }, 700);
+        } catch (_e) {
+          // Keep silent and let app render with fallback warnings.
+        }
+      })();
+    </script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link

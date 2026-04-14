@@ -1,20 +1,26 @@
 # TestPlugin
 
-## Lancer le simulateur (recommandé)
+## Lancement ultra simple
 
-Le chat IA utilise maintenant un proxy local (`/api/openai-text`) pour eviter les erreurs navigateur de type
-`Failed to fetch` quand on appelle OpenAI directement depuis le front.
+### Windows
+Double-clique sur `launch.bat`
 
-1. Démarrer le serveur:
+### Linux / macOS
+Dans un terminal:
 
 ```bash
-node server.js
+chmod +x launch.sh
+./launch.sh
 ```
 
-2. Ouvrir ensuite:
+Ensuite ouvre automatiquement:
 
 ```
-http://localhost:8080
+http://localhost:8787
 ```
 
-> Important: ne pas ouvrir `index.html` en `file://` si vous voulez que le chat OpenAI fonctionne.
+## Pourquoi
+
+Le chat OpenAI passe par un proxy local (`/api/openai/chat`) pour eviter les erreurs `Failed to fetch` du navigateur.
+
+> Si tu ouvres `index.html` en double-clic (`file://`), une redirection automatique vers `http://localhost:8787` est tentee.

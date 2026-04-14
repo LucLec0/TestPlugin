@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Survivor Quantum Simulator</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;700&family=Inter:wght@300;400;500;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="background-layer"></div>
+    <div class="app-shell">
+      <header class="main-header glass">
+        <div>
+          <h1>Survivor Quantum Simulator</h1>
+          <p>Simulation stratégique futuriste - alliances, conseils, jury et Sole Survivor</p>
+        </div>
+      </header>
+
+      <section id="setupScreen" class="screen active">
+        <div class="setup-grid">
+          <article class="panel glass">
+            <h2>1) Configuration générale</h2>
+            <div class="field-grid">
+              <label>
+                Nombre de joueurs (12 à 30)
+                <input id="playerCount" type="number" min="12" max="30" value="16" />
+              </label>
+              <label>
+                Nombre de tribus (2 à 4)
+                <input id="tribeCount" type="number" min="2" max="4" value="2" />
+              </label>
+              <label>
+                Joueurs restants pour la fusion
+                <input id="mergeAt" type="number" min="6" max="20" value="10" />
+              </label>
+              <label>
+                Joueur humain
+                <select id="humanPlayerSelect"></select>
+              </label>
+            </div>
+            <p id="divisibilityWarning" class="warning"></p>
+          </article>
+
+          <article class="panel glass">
+            <h2>2) Tribus & Fusion</h2>
+            <div id="tribeEditor" class="list-editor"></div>
+            <h3>Tribu de fusion</h3>
+            <div class="field-grid">
+              <label>
+                Nom tribu fusion
+                <input id="mergeTribeName" type="text" value="Nexus" maxlength="22" />
+              </label>
+              <label>
+                Couleur tribu fusion
+                <input id="mergeTribeColor" type="color" value="#f59e0b" />
+              </label>
+            </div>
+          </article>
+
+          <article class="panel glass">
+            <h2>3) Joueurs</h2>
+            <p class="hint">Tu peux modifier les noms et les tribus de départ.</p>
+            <div id="playersEditor" class="list-editor players-editor"></div>
+          </article>
+
+          <article class="panel glass">
+            <h2>4) Avantages & OpenAI</h2>
+            <div class="advantages-grid">
+              <label class="toggle"><input id="idolEnabled" type="checkbox" checked /> Idole cachée</label>
+              <label class="toggle"><input id="doubleVoteEnabled" type="checkbox" checked /> Double vote</label>
+              <label class="toggle"><input id="voteBlockEnabled" type="checkbox" checked /> Annule vote</label>
+              <label class="toggle"><input id="stealVoteEnabled" type="checkbox" checked /> Steal vote</label>
+              <label class="toggle"><input id="legacyEnabled" type="checkbox" checked /> Legacy</label>
+            </div>
+            <div class="field-grid">
+              <label>
+                Rareté (Double vote)
+                <select id="rarityDoubleVote">
+                  <option value="rare">Rare</option>
+                  <option value="veryRare" selected>Très rare</option>
+                  <option value="medium">Moyen</option>
+                </select>
+              </label>
+              <label>
+                Rareté (Annule vote)
+                <select id="rarityVoteBlock">
+                  <option value="rare" selected>Rare</option>
+                  <option value="veryRare">Très rare</option>
+                  <option value="medium">Moyen</option>
+                </select>
+              </label>
+              <label>
+                Rareté (Steal vote)
+                <select id="rarityStealVote">
+                  <option value="veryRare" selected>Très rare</option>
+                  <option value="rare">Rare</option>
+                  <option value="medium">Moyen</option>
+                </select>
+              </label>
+              <label>
+                Rareté (Legacy)
+                <select id="rarityLegacy">
+                  <option value="veryRare" selected>Très rare</option>
+                  <option value="rare">Rare</option>
+                  <option value="medium">Moyen</option>
+                </select>
+              </label>
+              <label>
+                Legacy jouable à (joueurs restants)
+                <input id="legacyPlayableAt" type="number" min="4" max="15" value="7" />
+              </label>
+            </div>
+            <div class="field-grid">
+              <label>
+                Clé API OpenAI (optionnel)
+                <input id="openAiKey" type="password" placeholder="sk-..." autocomplete="off" />
+              </label>
+              <label>
+                Modèle OpenAI
+                <input id="openAiModel" type="text" value="gpt-4.1-mini" />
+              </label>
+            </div>
+            <p class="hint">
+              Sans clé OpenAI, le simulateur utilise une IA locale tactique pour rester jouable.
+            </p>
+          </article>
+        </div>
+        <div class="setup-actions">
+          <button id="resetSetup" class="secondary">Réinitialiser</button>
+          <button id="startGame" class="primary">Lancer la simulation</button>
+        </div>
+      </section>
+
+      <section id="gameScreen" class="screen">
+        <div class="topbar glass">
+          <div class="episode-info">
+            <span id="episodeBadge">Épisode 1</span>
+            <span id="phaseBadge">Phase: Vie de camp</span>
+          </div>
+          <button id="nextPhaseButton" class="primary">▶ Avancer d'une phase</button>
+          <div class="alive-info">
+            <span id="aliveCounter">Joueurs restants: 16</span>
+          </div>
+        </div>
+
+        <div class="game-grid">
+          <aside class="panel glass players-panel">
+            <h2>Joueurs & Statuts</h2>
+            <div id="tribesBoard"></div>
+          </aside>
+
+          <main class="panel glass journal-panel">
+            <h2>Journal de bord</h2>
+            <div id="journalFeed" class="journal-feed"></div>
+          </main>
+
+          <aside class="panel glass control-panel">
+            <h2>Contrôle narratif</h2>
+            <label>
+              Directive pour l'IA (contexte social / stratégie)
+              <textarea
+                id="aiGuidance"
+                rows="6"
+                placeholder="Ex: Je veux jouer discret, viser les leaders de l'autre tribu et sécuriser une alliance de 3."
+              ></textarea>
+            </label>
+            <div class="action-box">
+              <h3>Action du joueur humain</h3>
+              <label>
+                Action
+                <select id="humanActionType">
+                  <option value="social">Renforcer un lien social</option>
+                  <option value="alliance">Proposer une alliance</option>
+                  <option value="target">Cibler un joueur</option>
+                  <option value="searchIdol">Chercher une idole</option>
+                  <option value="layLow">Rester discret</option>
+                </select>
+              </label>
+              <label>
+                Cible
+                <select id="humanActionTarget"></select>
+              </label>
+              <button id="applyHumanAction" class="secondary">Appliquer l'action</button>
+              <p class="hint">Utilisable surtout durant les phases de vie de camp / discussions.</p>
+            </div>
+          </aside>
+        </div>
+      </section>
+    </div>
+
+    <dialog id="targetModal" class="modal">
+      <div class="modal-content glass">
+        <header>
+          <h3 id="targetModalTitle">Niveaux de Target</h3>
+          <button id="closeTargetModal" class="secondary">Fermer</button>
+        </header>
+        <div id="targetModalBody"></div>
+      </div>
+    </dialog>
+
+    <dialog id="councilModal" class="modal council-modal">
+      <div class="modal-content glass">
+        <header>
+          <h3 id="councilTitle">Conseil Tribal</h3>
+          <button id="closeCouncilModal" class="secondary">Fermer</button>
+        </header>
+        <div id="councilStepInfo" class="council-step"></div>
+        <div id="councilParticipants" class="chips"></div>
+        <div id="humanCouncilControls"></div>
+        <div id="councilReveal" class="council-reveal hidden">
+          <div id="ballotCard" class="ballot-card">
+            <p>Cliquer pour révéler</p>
+            <strong id="ballotText">---</strong>
+          </div>
+          <small id="revealCounter"></small>
+        </div>
+        <div id="councilLog" class="journal-feed compact"></div>
+        <div id="councilActions" class="setup-actions">
+          <button id="councilContinueButton" class="primary hidden">Continuer</button>
+        </div>
+      </div>
+    </dialog>
+
+    <template id="journalEntryTemplate">
+      <article class="journal-entry">
+        <header>
+          <span class="meta"></span>
+        </header>
+        <p></p>
+      </article>
+    </template>
+
+    <script src="./app.js" type="module"></script>
+  </body>
+</html>

@@ -8,4 +8,4 @@ PORT="${PORT:-8080}"
 
 echo "[survivor] Démarrage du serveur local sur http://localhost:${PORT}"
 echo "[survivor] Ouvre cette URL dans ton navigateur."
-exec PORT="$PORT" node server.js
+PORT="$PORT" exec node server.js

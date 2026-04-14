@@ -380,14 +380,15 @@ button:hover:not(:disabled) {
 #tribesBoard {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
 }
 
 .tribe-box {
-  border: 1px solid rgba(152, 188, 255, 0.26);
-  border-radius: 12px;
-  padding: 10px;
-  background: rgba(1, 9, 26, 0.45);
+  border: 1px solid rgba(160, 190, 245, 0.36);
+  border-radius: 14px;
+  padding: 12px;
+  background: rgba(245, 249, 255, 0.12);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
   animation: pulseBorder 2.6s ease-in-out infinite;
 }
 
@@ -405,8 +406,8 @@ button:hover:not(:disabled) {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: 8px;
-  margin-bottom: 6px;
+  gap: 10px;
+  margin-bottom: 10px;
 }
 
 .tribe-name {
@@ -427,45 +428,73 @@ button:hover:not(:disabled) {
   font-size: 0.82rem;
 }
 
-.players-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
+.players-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.player-square {
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  justify-content: space-between;
+  width: 112px;
+  min-height: 102px;
+  border-radius: 10px;
+  border: 2px solid color-mix(in srgb, var(--tribe-color, #93c5fd) 72%, #ffffff 28%);
+  background: linear-gradient(160deg, rgba(11, 24, 54, 0.92), rgba(7, 16, 36, 0.86));
+  color: #f8fbff;
+  padding: 8px;
+  text-align: left;
+  cursor: default;
+  box-shadow: 0 8px 18px rgba(1, 7, 20, 0.38);
+  transition: transform 120ms ease, box-shadow 120ms ease, border-color 120ms ease;
 }
 
-.players-list li {
+.player-square.chat-openable {
+  cursor: pointer;
+}
+
+.player-square.chat-openable:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 12px 20px rgba(1, 7, 20, 0.46);
+}
+
+.player-square-top {
   display: flex;
   justify-content: space-between;
-  align-items: center;
-  gap: 8px;
-  background: rgba(6, 14, 38, 0.78);
-  border: 1px solid rgba(145, 183, 248, 0.16);
-  border-radius: 8px;
-  padding: 6px 8px;
-  font-size: 0.83rem;
+  align-items: flex-start;
+  gap: 4px;
 }
 
-.players-list li.human-player-highlight {
+.player-square-name {
+  font-weight: 700;
+  line-height: 1.15;
+  word-break: break-word;
+}
+
+.player-square-markers {
+  font-size: 0.84rem;
+  color: #ffe082;
+}
+
+.player-square-tribe {
+  margin-top: auto;
+  color: #cfe2ff;
+  font-size: 0.75rem;
+}
+
+.player-square.human-player-highlight {
   border-color: rgba(253, 224, 71, 0.78);
-  box-shadow: 0 0 0 1px rgba(253, 224, 71, 0.5), 0 0 18px rgba(253, 224, 71, 0.2);
+  box-shadow: 0 0 0 1px rgba(253, 224, 71, 0.5), 0 0 18px rgba(253, 224, 71, 0.24);
 }
 
-.player-meta {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  color: #cad8fa;
-}
-
-.eliminated {
+.player-square.eliminated {
   opacity: 0.54;
   text-decoration: line-through;
 }
 
-.immune {
+.player-square.immune {
   box-shadow: 0 0 0 1px rgba(252, 211, 77, 0.58);
 }
 
@@ -484,8 +513,10 @@ button:hover:not(:disabled) {
 }
 
 .council-modal .modal-content {
-  border: 1px solid rgba(250, 204, 21, 0.45);
-  box-shadow: 0 0 0 2px rgba(250, 204, 21, 0.16), 0 22px 40px rgba(1, 5, 18, 0.62);
+  border: 1px solid rgba(244, 181, 64, 0.62);
+  background: linear-gradient(170deg, rgba(255, 246, 229, 0.92), rgba(247, 233, 206, 0.86));
+  box-shadow: 0 0 0 2px rgba(250, 204, 21, 0.2), 0 24px 44px rgba(36, 22, 2, 0.48);
+  color: #2a1b04;
 }
 
 .journal-entry {
@@ -522,6 +553,19 @@ button:hover:not(:disabled) {
   line-height: 1.33;
 }
 
+.council-modal .journal-entry {
+  border-color: rgba(191, 142, 58, 0.34);
+  background: rgba(255, 251, 242, 0.88);
+}
+
+.council-modal .journal-entry .meta {
+  color: #5b3c0d;
+}
+
+.council-modal .journal-entry p {
+  color: #2f1e05;
+}
+
 .tribe-token {
   color: var(--tribe-color, #93c5fd);
   font-weight: 700;
@@ -530,14 +574,6 @@ button:hover:not(:disabled) {
 .player-token {
   color: var(--tribe-color, #93c5fd);
   font-weight: 800;
-}
-
-.action-box {
-  margin-top: 14px;
-  border: 1px solid rgba(138, 172, 236, 0.3);
-  border-radius: 10px;
-  padding: 10px;
-  background: rgba(5, 14, 35, 0.65);
 }
 
 .modal {
@@ -556,6 +592,13 @@ button:hover:not(:disabled) {
   padding: 12px;
 }
 
+.target-modal .modal-content {
+  border: 1px solid rgba(125, 153, 204, 0.5);
+  background: linear-gradient(170deg, rgba(244, 250, 255, 0.95), rgba(231, 241, 255, 0.95));
+  box-shadow: 0 22px 40px rgba(9, 26, 58, 0.32);
+  color: #0f172a;
+}
+
 .modal-content > header {
   display: flex;
   justify-content: space-between;
@@ -565,24 +608,37 @@ button:hover:not(:disabled) {
 
 .target-row {
   display: flex;
-  justify-content: space-between;
+  flex-direction: column;
   gap: 8px;
-  padding: 6px 8px;
-  border-bottom: 1px dashed rgba(138, 174, 240, 0.26);
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(138, 174, 240, 0.26);
+  background: rgba(255, 255, 255, 0.62);
+  margin-bottom: 8px;
+}
+
+.target-row > span {
+  color: #0f172a;
+}
+
+.target-row strong {
+  color: #1d4ed8;
 }
 
 .target-chart-shell {
   margin-top: 10px;
-  border: 1px solid rgba(147, 197, 253, 0.34);
-  border-radius: 10px;
-  padding: 8px;
-  background: rgba(4, 11, 28, 0.65);
+  border: 1px solid rgba(125, 153, 204, 0.45);
+  border-radius: 12px;
+  padding: 10px;
+  background: linear-gradient(180deg, rgba(241, 247, 255, 0.96), rgba(227, 238, 255, 0.96));
 }
 
 #targetChartCanvas {
   width: 100%;
   height: 240px;
   display: block;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.64);
 }
 
 .target-chart-legend {
@@ -599,8 +655,9 @@ button:hover:not(:disabled) {
   padding: 4px 8px;
   border-radius: 999px;
   font-size: 0.74rem;
-  background: rgba(15, 25, 50, 0.74);
-  border: 1px solid rgba(147, 197, 253, 0.3);
+  color: #0f172a;
+  background: rgba(255, 255, 255, 0.78);
+  border: 1px solid rgba(125, 153, 204, 0.45);
 }
 
 .target-legend-item i {
@@ -617,20 +674,22 @@ button:hover:not(:disabled) {
 }
 
 .chip {
-  background: rgba(7, 18, 43, 0.82);
-  border: 1px solid rgba(145, 186, 255, 0.3);
+  background: rgba(255, 255, 255, 0.86);
+  border: 1px solid rgba(194, 142, 53, 0.45);
+  color: #4a3108;
   border-radius: 999px;
   padding: 6px 10px;
   font-size: 0.78rem;
 }
 
 .chip.immune {
-  border-color: rgba(248, 211, 96, 0.85);
+  border-color: rgba(248, 211, 96, 0.92);
+  box-shadow: inset 0 0 0 1px rgba(248, 211, 96, 0.4);
 }
 
 .council-step {
-  font-size: 0.9rem;
-  color: #c7d6f8;
+  font-size: 0.92rem;
+  color: #3d2a0b;
   margin-bottom: 8px;
 }
 
@@ -638,13 +697,13 @@ button:hover:not(:disabled) {
   margin-top: 10px;
   padding: 10px;
   border-radius: 10px;
-  border: 1px solid rgba(251, 191, 36, 0.42);
-  background: rgba(58, 35, 4, 0.45);
+  border: 1px solid rgba(209, 151, 55, 0.62);
+  background: rgba(255, 248, 232, 0.92);
 }
 
 .council-running-tally h4 {
   margin: 0 0 6px;
-  color: #fde68a;
+  color: #57370a;
   font-size: 0.82rem;
 }
 
@@ -661,13 +720,13 @@ button:hover:not(:disabled) {
   border-radius: 999px;
   padding: 4px 8px;
   font-size: 0.78rem;
-  border: 1px solid rgba(252, 211, 77, 0.45);
-  background: rgba(30, 17, 2, 0.6);
-  color: #fde68a;
+  border: 1px solid rgba(209, 151, 55, 0.52);
+  background: rgba(255, 255, 255, 0.9);
+  color: #57370a;
 }
 
 .running-tally-chip .player-token {
-  color: #fde68a;
+  color: #57370a;
 }
 
 .hidden {
@@ -683,8 +742,8 @@ button:hover:not(:disabled) {
   width: min(370px, 92%);
   height: 170px;
   border-radius: 14px;
-  background: linear-gradient(130deg, #0f172a, #1d2f52);
-  border: 1px solid rgba(130, 177, 255, 0.4);
+  background: linear-gradient(130deg, #fff8ea, #f9e9c9);
+  border: 1px solid rgba(199, 144, 56, 0.52);
   display: grid;
   place-content: center;
   text-align: center;
@@ -699,13 +758,90 @@ button:hover:not(:disabled) {
   position: absolute;
   inset: 0;
   border-radius: 14px;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08), 0 12px 24px rgba(0, 4, 16, 0.45);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.56), 0 12px 24px rgba(64, 35, 3, 0.24);
 }
 
 .ballot-card strong {
   font-size: 1.8rem;
   letter-spacing: 0.8px;
   font-family: Orbitron, Inter, sans-serif;
+  color: #3a2306;
+}
+
+.target-progress {
+  width: 100%;
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(141, 167, 217, 0.28);
+  overflow: hidden;
+}
+
+.target-progress i {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, #2563eb, #06b6d4);
+  border-radius: inherit;
+}
+
+.chat-launch-area {
+  margin-top: 10px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(124px, 1fr));
+  gap: 8px;
+  max-height: 500px;
+  overflow: auto;
+}
+
+.chat-launch-card {
+  width: 100%;
+  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--tribe-color, #93c5fd) 70%, #ffffff 30%);
+  background: linear-gradient(165deg, rgba(239, 247, 255, 0.95), rgba(224, 236, 255, 0.94));
+  color: #0f172a;
+  padding: 10px;
+  text-align: left;
+  box-shadow: 0 8px 16px rgba(15, 23, 42, 0.14);
+}
+
+.chat-launch-card .name {
+  display: block;
+  font-weight: 700;
+  margin-bottom: 3px;
+}
+
+.chat-launch-card small {
+  color: #35578f;
+}
+
+.chat-modal .modal-content {
+  border: 1px solid rgba(129, 157, 218, 0.48);
+  background: linear-gradient(170deg, rgba(236, 244, 255, 0.95), rgba(224, 236, 254, 0.95));
+  color: #0f172a;
+}
+
+.chat-feed {
+  max-height: 360px;
+  border: 1px solid rgba(129, 157, 218, 0.35);
+  border-radius: 10px;
+  padding: 8px;
+  background: rgba(255, 255, 255, 0.66);
+}
+
+.chat-entry.human {
+  border-color: rgba(59, 130, 246, 0.48);
+  background: rgba(219, 234, 254, 0.75);
+}
+
+.chat-entry.ai {
+  border-color: rgba(16, 185, 129, 0.42);
+  background: rgba(209, 250, 229, 0.74);
+}
+
+.chat-composer {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
 .ballot-card.flip {
@@ -741,19 +877,19 @@ button:hover:not(:disabled) {
   width: 100%;
   border-collapse: collapse;
   margin-top: 7px;
-  background: rgba(8, 16, 38, 0.72);
+  background: rgba(255, 255, 255, 0.9);
   border-radius: 8px;
   overflow: hidden;
-  border: 1px solid rgba(147, 197, 253, 0.3);
+  border: 1px solid rgba(196, 146, 59, 0.42);
 }
 
 .vote-table th,
 .vote-table td {
-  border-bottom: 1px solid rgba(136, 171, 238, 0.2);
+  border-bottom: 1px solid rgba(196, 146, 59, 0.22);
   padding: 8px 7px;
   text-align: left;
   font-size: 0.84rem;
-  color: #e8efff;
+  color: #2f1e05;
 }
 
 .winner-banner {

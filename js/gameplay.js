@@ -122,8 +122,17 @@
     return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   }
 
+  function escapeHtml(value) {
+    return String(value ?? "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+  }
+
   function styleTextForJournal(text) {
-    let output = text;
+    let output = escapeHtml(text);
     const sortedTribes = [...app.tribes, app.mergeTribe].filter(Boolean);
     sortedTribes.forEach((tribe) => {
       const color = getTribeColor(tribe.id);
@@ -173,7 +182,13 @@
     const chartH = height - margin.top - margin.bottom;
     if (chartW <= 0 || chartH <= 0) return;
 
-    ctx.strokeStyle = "rgba(147,197,253,0.2)";
+    const background = ctx.createLinearGradient(0, margin.top, 0, height - margin.bottom);
+    background.addColorStop(0, "rgba(255, 255, 255, 0.95)");
+    background.addColorStop(1, "rgba(236, 246, 255, 0.98)");
+    ctx.fillStyle = background;
+    ctx.fillRect(margin.left, margin.top, chartW, chartH);
+
+    ctx.strokeStyle = "rgba(30, 64, 175, 0.22)";
     ctx.lineWidth = 1;
     for (let y = 0; y <= 5; y += 1) {
       const yy = margin.top + (chartH * y) / 5;
@@ -182,8 +197,8 @@
       ctx.lineTo(width - margin.right, yy);
       ctx.stroke();
       const value = 100 - y * 20;
-      ctx.fillStyle = "rgba(226,232,240,0.8)";
-      ctx.font = "11px Inter, sans-serif";
+      ctx.fillStyle = "rgba(30, 41, 59, 0.9)";
+      ctx.font = "600 11px Inter, sans-serif";
       ctx.fillText(`${value}`, 4, yy + 4);
     }
 
@@ -196,9 +211,22 @@
     const span = Math.max(1, maxEpisode - minEpisode);
 
     const players = app.players.filter((p) => p.tribeId === tribeId);
+    const seriesPalette = [
+      "#0ea5e9",
+      "#f97316",
+      "#8b5cf6",
+      "#10b981",
+      "#e11d48",
+      "#f59e0b",
+      "#14b8a6",
+      "#3b82f6",
+      "#ef4444",
+      "#6366f1"
+    ];
     el.targetChartLegend.innerHTML = "";
-    players.forEach((player) => {
-      const color = getTribeColor(player.tribeId);
+    players.forEach((player, playerIndex) => {
+      const baseColor = seriesPalette[playerIndex % seriesPalette.length];
+      const color = player.id === app.humanPlayerId ? "#f59e0b" : baseColor;
       const points = [];
       episodes.forEach((ep) => {
         const value = app.targetHistoryByEpisode[ep]?.[player.id];
@@ -211,17 +239,20 @@
 
       ctx.strokeStyle = color;
       ctx.lineWidth = player.id === app.humanPlayerId ? 3 : 2;
+      ctx.shadowColor = "rgba(15, 23, 42, 0.18)";
+      ctx.shadowBlur = player.id === app.humanPlayerId ? 8 : 5;
       ctx.beginPath();
       points.forEach((pt, idx) => {
         if (idx === 0) ctx.moveTo(pt.x, pt.y);
         else ctx.lineTo(pt.x, pt.y);
       });
       ctx.stroke();
+      ctx.shadowBlur = 0;
 
       ctx.fillStyle = color;
       points.forEach((pt) => {
         ctx.beginPath();
-        ctx.arc(pt.x, pt.y, player.id === app.humanPlayerId ? 3.5 : 2.5, 0, Math.PI * 2);
+        ctx.arc(pt.x, pt.y, player.id === app.humanPlayerId ? 4 : 3, 0, Math.PI * 2);
         ctx.fill();
       });
 
@@ -231,8 +262,8 @@
       el.targetChartLegend.appendChild(legendItem);
     });
 
-    ctx.fillStyle = "rgba(226,232,240,0.85)";
-    ctx.font = "11px Inter, sans-serif";
+    ctx.fillStyle = "rgba(15, 23, 42, 0.9)";
+    ctx.font = "600 11px Inter, sans-serif";
     episodes.forEach((ep) => {
       const x = margin.left + ((ep - minEpisode) / span) * chartW;
       ctx.fillText(`E${ep}`, x - 8, height - 8);
@@ -248,6 +279,7 @@
   function renderTribesBoard() {
     el.tribesBoard.innerHTML = "";
     const tribesToShow = app.merged ? [app.mergeTribe] : app.tribes;
+    const human = getPlayerById(app.humanPlayerId);
     tribesToShow.forEach((tribe) => {
       const players = getAliveByTribe(tribe.id);
       const eliminated = app.players.filter((p) => !p.alive && p.tribeId === tribe.id);
@@ -261,24 +293,41 @@
         </div>
         <button class="secondary icon-button" data-open-target="${tribe.id}">🎯 Cible</button>
       </header>
-      <ul class="players-list"></ul>
+      <div class="players-grid"></div>
     `;
-      const list = box.querySelector(".players-list");
+      const list = box.querySelector(".players-grid");
 
       [...players, ...eliminated].forEach((player) => {
-        const crown = player.immunized ? "👑" : "";
-        const jury = player.jury ? "⚖️" : "";
-        const eliminatedBadge = player.alive ? "" : "❌";
-        const advantageBadges = player.advantages.map((a) => ADVANTAGE_EMOJI[a.type]).join(" ");
-        const li = document.createElement("li");
-        if (!player.alive) li.classList.add("eliminated");
-        if (player.immunized) li.classList.add("immune");
-        if (player.id === app.humanPlayerId) li.classList.add("human-player-highlight");
-        li.innerHTML = `
-        <span>${formatPlayerNameInList(player)}</span>
-        <span class="player-meta">${crown} ${jury} ${eliminatedBadge} ${advantageBadges}</span>
+        const card = document.createElement("button");
+        card.type = "button";
+        card.className = "player-square";
+        const canChat =
+          Boolean(human?.alive && player.alive && player.id !== human.id) &&
+          (app.merged || player.tribeId === human.tribeId);
+        if (!player.alive) card.classList.add("eliminated");
+        if (player.immunized) card.classList.add("immune");
+        if (player.id === app.humanPlayerId) card.classList.add("human-player-highlight");
+        if (canChat) card.classList.add("chat-openable");
+        card.style.setProperty("--tribe-color", getTribeColor(player.tribeId));
+        const markers = [
+          player.immunized ? "👑" : "",
+          player.jury ? "⚖️" : "",
+          !player.alive ? "❌" : "",
+          ...player.advantages.map((a) => ADVANTAGE_EMOJI[a.type])
+        ]
+          .filter(Boolean)
+          .join(" ");
+        card.innerHTML = `
+        <div class="player-square-top">
+          <span class="player-square-name">${player.name}${player.id === app.humanPlayerId ? " 👤" : ""}</span>
+          <span class="player-square-markers">${markers}</span>
+        </div>
+        <small class="player-square-tribe">${tribe.name}</small>
       `;
-        list.appendChild(li);
+        if (canChat) {
+          card.addEventListener("click", () => openChatWithPlayer(player.id));
+        }
+        list.appendChild(card);
       });
       el.tribesBoard.appendChild(box);
     });
@@ -289,17 +338,7 @@
   }
 
   function renderHumanTargetOptions() {
-    const human = getPlayerById(app.humanPlayerId);
-    if (!human) {
-      el.humanActionTarget.innerHTML = "";
-      return;
-    }
-    const alive = getAlivePlayers().filter((p) => p.id !== app.humanPlayerId);
-    const sameTribe = app.merged ? alive : alive.filter((p) => p.tribeId === human.tribeId);
-    const options = sameTribe;
-    el.humanActionTarget.innerHTML = options
-      .map((p) => `<option value="${p.id}">${p.name}</option>`)
-      .join("");
+    renderChatLaunchArea();
   }
 
   function openTargetModal(tribeId) {
@@ -311,7 +350,11 @@
     players.forEach((player) => {
       const row = document.createElement("div");
       row.className = "target-row";
-      row.innerHTML = `<span>${player.name}</span><strong>${Math.round(player.target)}%</strong>`;
+      row.innerHTML = `
+      <span>${formatPlayerNameInList(player)}</span>
+      <strong>${Math.round(player.target)}%</strong>
+      <div class="target-progress"><i style="width:${Math.round(player.target)}%"></i></div>
+    `;
       el.targetModalBody.appendChild(row);
     });
     drawTargetHistoryChart(tribeId);
@@ -347,36 +390,216 @@
     }
   }
 
-  function describeHumanAction(action) {
-    if (!action) return "Aucune";
-    const target = action.targetId ? getPlayerById(action.targetId)?.name || "cible" : "cible";
-    switch (action.type) {
-      case "social":
-        return `Renforcer le lien avec ${target}`;
-      case "alliance":
-        return `Proposer une alliance à ${target}`;
-      case "target":
-        return `Diriger les votes contre ${target}`;
-      case "searchIdol":
-        return "Chercher une idole";
-      case "layLow":
-        return "Rester discret";
-      default:
-        return "Action inconnue";
+  function extractOpenAiText(json) {
+    if (!json) return "";
+    if (typeof json.output_text === "string" && json.output_text.trim()) return json.output_text;
+    if (Array.isArray(json.output)) {
+      const chunks = [];
+      json.output.forEach((item) => {
+        if (Array.isArray(item.content)) {
+          item.content.forEach((c) => {
+            if (c.text) chunks.push(c.text);
+          });
+        }
+      });
+      return chunks.join(" ");
+    }
+    return "";
+  }
+
+  function getChatPersonality(playerId) {
+    if (app.chatState.personalities[playerId]) return app.chatState.personalities[playerId];
+    const personalities = [
+      "froid et analytique",
+      "honnête et direct",
+      "manipulateur et ambigu",
+      "social et chaleureux",
+      "méfiant et discret",
+      "stratège opportuniste"
+    ];
+    const personality = pickRandom(personalities);
+    app.chatState.personalities[playerId] = personality;
+    return personality;
+  }
+
+  function getConversation(playerId) {
+    app.chatState.conversations[playerId] = app.chatState.conversations[playerId] || [];
+    return app.chatState.conversations[playerId];
+  }
+
+  function renderChatLaunchArea() {
+    if (!el.chatLaunchArea) return;
+    const human = getPlayerById(app.humanPlayerId);
+    if (!human || !human.alive) {
+      el.chatLaunchArea.innerHTML = `<p class="hint">Le joueur humain n'est plus actif.</p>`;
+      return;
+    }
+    const candidates = getAlivePlayers().filter((p) => p.id !== human.id && p.tribeId === human.tribeId);
+    if (!candidates.length) {
+      el.chatLaunchArea.innerHTML = `<p class="hint">Aucun joueur disponible dans ta tribu pour discuter.</p>`;
+      return;
+    }
+    el.chatLaunchArea.innerHTML = candidates
+      .map(
+        (player) => `
+        <button class="chat-launch-card" data-chat-player-id="${player.id}" style="--tribe-color:${getTribeColor(player.tribeId)}">
+          <span class="name">${player.name}</span>
+          <small>${getTribeName(player.tribeId)}</small>
+        </button>
+      `
+      )
+      .join("");
+    el.chatLaunchArea.querySelectorAll("[data-chat-player-id]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const playerId = button.getAttribute("data-chat-player-id");
+        openChatWithPlayer(playerId);
+      });
+    });
+  }
+
+  function renderChatFeed(playerId) {
+    if (!el.chatFeed) return;
+    const conversation = getConversation(playerId);
+    el.chatFeed.innerHTML = "";
+    if (!conversation.length) {
+      const empty = document.createElement("article");
+      empty.className = "journal-entry";
+      empty.innerHTML = `<header><span class="meta">💬 Chat</span></header><p>Conversation vide pour le moment.</p>`;
+      el.chatFeed.appendChild(empty);
+      return;
+    }
+    conversation.forEach((message) => {
+      const item = document.createElement("article");
+      item.className = `journal-entry chat-entry ${message.role}`;
+      item.innerHTML = `<header><span class="meta">${message.author}</span></header><p>${styleTextForJournal(message.text)}</p>`;
+      if (el.chatFeed.firstChild) el.chatFeed.insertBefore(item, el.chatFeed.firstChild);
+      else el.chatFeed.appendChild(item);
+    });
+  }
+
+  function applyChatImpact(human, aiPlayer, humanText, aiText) {
+    const combined = `${humanText} ${aiText}`.toLowerCase();
+    if (/(alliance|confiance|protéger|vote ensemble|final)/.test(combined)) {
+      increaseTrust(human, aiPlayer, 10);
+      increaseTrust(aiPlayer, human, 8);
+      maybeCreateAlliance(human, aiPlayer);
+      applyTargetDelta(human, 1);
+    }
+    if (/(mensonge|trahir|target|cible|danger|eliminer|blindside)/.test(combined)) {
+      applyTargetDelta(aiPlayer, 4);
+      applyTargetDelta(human, 2);
+      increaseTrust(aiPlayer, human, -5);
+    }
+    if (/(calme|discret|low profile|ombre)/.test(combined)) {
+      applyTargetDelta(human, -2);
     }
   }
 
-  function applyHumanAction() {
+  async function buildAiChatReply(human, aiPlayer, userMessage) {
+    const personality = getChatPersonality(aiPlayer.id);
+    if (!app.openAi.key) {
+      return `${aiPlayer.name} (${personality}) : Je note ce que tu dis. On garde ça entre nous pour l'instant.`;
+    }
+    try {
+      const conversation = getConversation(aiPlayer.id).slice(-8);
+      const history = conversation
+        .map((msg) => `${msg.author}: ${msg.text}`)
+        .reverse()
+        .join("\n");
+      const prompt = `Tu joues ${aiPlayer.name} dans un simulateur Survivor.
+Personnalité: ${personality}.
+Tu parles au joueur humain ${human.name}.
+Règles connues: tribus, alliances, votes, conseil, immunité.
+Contexte récent:
+${history || "Aucun historique."}
+Message reçu: ${userMessage}
+Réponds en français en 1 à 3 phrases, dans le rôle, avec logique stratégique et sociale.`;
+      const response = await fetch("https://api.openai.com/v1/responses", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${app.openAi.key}`
+        },
+        body: JSON.stringify({
+          model: app.openAi.model,
+          input: prompt
+        })
+      });
+      if (!response.ok) {
+        return `${aiPlayer.name} : Je préfère rester prudent pour l'instant.`;
+      }
+      const json = await response.json();
+      const text = extractOpenAiText(json).trim();
+      return text || `${aiPlayer.name} : Je garde cette info pour le prochain vote.`;
+    } catch (_e) {
+      return `${aiPlayer.name} : On en reparle près du feu ce soir.`;
+    }
+  }
+
+  function maybePushAiInitiatedMessage(playerId) {
     const human = getPlayerById(app.humanPlayerId);
-    if (!human || !human.alive) return;
-    const type = el.humanActionType.value;
-    const target = getPlayerById(el.humanActionTarget.value);
-    if (!app.merged && target && target.tribeId !== human.tribeId) {
-      logJournal("⛔", "Action refusée", `${human.name} ne peut interagir qu'avec sa propre tribu avant la fusion.`);
+    const aiPlayer = getPlayerById(playerId);
+    if (!human || !aiPlayer || !human.alive || !aiPlayer.alive) return;
+    if (!app.merged && aiPlayer.tribeId !== human.tribeId) return;
+    if (!chance(0.22)) return;
+    const conversation = getConversation(playerId);
+    const suggestions = [
+      "J'ai entendu ton nom circuler, reste prudent.",
+      "On devrait verrouiller un vote à trois.",
+      "Je ne fais pas confiance à tout le monde ici.",
+      "Si on se protège mutuellement, on passe le prochain conseil."
+    ];
+    const text = pickRandom(suggestions);
+    conversation.push({ role: "ai", author: aiPlayer.name, text });
+    increaseTrust(aiPlayer, human, 3);
+    applyTargetDelta(human, 1);
+    if (app.chatState.openWithPlayerId === playerId) {
+      renderChatFeed(playerId);
+    }
+    logJournal("💬", "Chat IA", `${aiPlayer.name} envoie un message privé à ${human.name}.`);
+  }
+
+  async function sendChatMessage() {
+    const targetId = app.chatState.openWithPlayerId;
+    const human = getPlayerById(app.humanPlayerId);
+    const aiPlayer = getPlayerById(targetId);
+    if (!human || !aiPlayer || !human.alive || !aiPlayer.alive) return;
+    const userMessage = (el.chatInput?.value || "").trim();
+    if (!userMessage) return;
+    if (!app.merged && aiPlayer.tribeId !== human.tribeId) {
+      logJournal("⛔", "Chat refusé", `${human.name} ne peut discuter qu'avec sa tribu avant la fusion.`);
       return;
     }
-    app.humanPendingAction = { type, targetId: target?.id ?? null };
-    logJournal("🧭", "Directive joueur", `Action préparée: ${human.name} -> ${describeHumanAction(app.humanPendingAction)}`);
+    const conversation = getConversation(targetId);
+    conversation.push({ role: "human", author: human.name, text: userMessage });
+    if (el.chatInput) el.chatInput.value = "";
+    renderChatFeed(targetId);
+    const reply = await buildAiChatReply(human, aiPlayer, userMessage);
+    conversation.push({ role: "ai", author: aiPlayer.name, text: reply });
+    renderChatFeed(targetId);
+    applyChatImpact(human, aiPlayer, userMessage, reply);
+    logJournal("💬", "Chat", `${human.name} discute avec ${aiPlayer.name}.`);
+  }
+
+  function openChatWithPlayer(playerId) {
+    const human = getPlayerById(app.humanPlayerId);
+    const target = getPlayerById(playerId);
+    if (!human || !target || !human.alive || !target.alive) return;
+    if (!app.merged && target.tribeId !== human.tribeId) {
+      logJournal("⛔", "Chat refusé", `${human.name} ne peut discuter qu'avec sa tribu avant la fusion.`);
+      return;
+    }
+    app.chatState.openWithPlayerId = playerId;
+    if (el.chatTitle) el.chatTitle.textContent = `Chat avec ${target.name}`;
+    if (el.chatPersonalityHint) {
+      el.chatPersonalityHint.textContent = `Personnalité perçue: ${getChatPersonality(target.id)}.`;
+    }
+    renderChatFeed(playerId);
+    if (el.chatModal) el.chatModal.showModal();
+  }
+
+  function closeChatModal() {
+    if (el.chatModal?.open) el.chatModal.close();
   }
 
   function getIdolInGame() {
@@ -463,144 +686,7 @@
     return false;
   }
 
-  function consumeHumanActionInCamp() {
-    if (!app.humanPendingAction) return;
-    const human = getPlayerById(app.humanPlayerId);
-    if (!human || !human.alive) return;
-    const { type, targetId } = app.humanPendingAction;
-    const target = targetId ? getPlayerById(targetId) : null;
-    if (type === "social" && target?.alive) {
-      increaseTrust(human, target, 16);
-      increaseTrust(target, human, 12);
-      applyTargetDelta(human, -2);
-      logJournal("🤝", "Lien social", `${human.name} passe du temps avec ${target.name}. Leur relation se renforce.`);
-    } else if (type === "alliance" && target?.alive) {
-      increaseTrust(human, target, 14);
-      increaseTrust(target, human, 10);
-      maybeCreateAlliance(human, target);
-      if (human.alliances.has(target.id)) {
-        logJournal("🛡️", "Alliance", `${human.name} et ${target.name} officialisent une alliance tactique.`);
-        applyTargetDelta(human, 3);
-        applyTargetDelta(target, 2);
-      } else {
-        logJournal("💬", "Alliance hésitante", `${target.name} reste prudent face à la proposition de ${human.name}.`);
-      }
-    } else if (type === "target" && target?.alive) {
-      applyTargetDelta(target, 8);
-      applyTargetDelta(human, 5);
-      logJournal("🎯", "Plan offensif", `${human.name} tente de positionner ${target.name} comme cible du prochain vote.`);
-    } else if (type === "searchIdol") {
-      attemptFindIdol(human, 0.5, "Action humaine");
-    } else if (type === "layLow") {
-      applyTargetDelta(human, -5);
-      Object.keys(human.trust).forEach((id) => {
-        human.trust[id] = clamp(human.trust[id] + randInt(-2, 2), -100, 100);
-      });
-      logJournal("🫥", "Discrétion", `${human.name} se fait discret pour diminuer la pression autour de son jeu.`);
-    }
-    app.humanPendingAction = null;
-  }
-
-  function applyGuidanceInfluence() {
-    const guidance = el.aiGuidance.value.trim().toLowerCase();
-    if (!guidance) return;
-    const human = getPlayerById(app.humanPlayerId);
-    if (!human || !human.alive) return;
-    const others = getAlivePlayers().filter((p) => p.id !== human.id);
-    const namedTarget = others.find((p) => guidance.includes(p.name.toLowerCase()));
-
-    if (/(cibl|target|elim|blindside|sortir)/.test(guidance) && namedTarget) {
-      applyTargetDelta(namedTarget, 6);
-      applyTargetDelta(human, 3);
-      logJournal("🧠", "Directive IA", `${human.name} pousse une campagne discrète contre ${namedTarget.name}.`);
-    }
-    if (/(alliance|allié|confiance|social)/.test(guidance) && namedTarget) {
-      increaseTrust(human, namedTarget, 10);
-      increaseTrust(namedTarget, human, 8);
-      maybeCreateAlliance(human, namedTarget);
-      logJournal("🫱", "Directive IA", `${human.name} renforce son lien stratégique avec ${namedTarget.name}.`);
-    }
-    if (/(discret|ombre|low profile)/.test(guidance)) {
-      applyTargetDelta(human, -4);
-    }
-    if (/(idole|idol)/.test(guidance) && chance(0.24)) {
-      attemptFindIdol(human, 0.42, "Directive IA");
-    }
-  }
-
-  function extractOpenAiText(json) {
-    if (!json) return "";
-    if (typeof json.output_text === "string" && json.output_text.trim()) return json.output_text;
-    if (Array.isArray(json.output)) {
-      const chunks = [];
-      json.output.forEach((item) => {
-        if (Array.isArray(item.content)) {
-          item.content.forEach((c) => {
-            if (c.text) chunks.push(c.text);
-          });
-        }
-      });
-      return chunks.join(" ");
-    }
-    return "";
-  }
-
-  function localNarration(label, guidance) {
-    const alive = getAlivePlayers();
-    const highThreat = [...alive].sort((a, b) => b.target - a.target).slice(0, 2);
-    const lowThreat = [...alive].sort((a, b) => a.target - b.target).slice(0, 2);
-    const fragments = [
-      `${label}: ${highThreat[0]?.name || "Un joueur"} attire fortement l'attention comme menace à surveiller.`,
-      `${lowThreat[0]?.name || "Un joueur discret"} reste dans l'ombre et consolide sa survie.`,
-      guidance
-        ? `La directive joueur influence les dynamiques: ${guidance.slice(0, 120)}.`
-        : "Aucune directive spécifique, le social domine les décisions."
-    ];
-    return fragments.join(" ");
-  }
-
-  async function createOpenAiNarration(label) {
-    const guidance = el.aiGuidance.value.trim();
-    app.guidance = guidance;
-    if (!app.openAi.key) {
-      return localNarration(label, guidance);
-    }
-
-    try {
-      const alive = getAlivePlayers()
-        .map((p) => `${p.name} [T:${Math.round(p.target)}%]`)
-        .join(", ");
-      const prompt = `Tu es narrateur d'un simulateur Survivor en français. Phase: ${label}.
-Joueurs encore en jeu: ${alive}.
-Directive utilisateur: ${guidance || "Aucune"}.
-Rédige 2 phrases courtes, cohérentes, axées stratégie/alliance, sans inventer d'élimination immédiate.`;
-
-      const response = await fetch("https://api.openai.com/v1/responses", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${app.openAi.key}`
-        },
-        body: JSON.stringify({
-          model: app.openAi.model,
-          input: prompt
-        })
-      });
-      if (!response.ok) {
-        return localNarration(label, guidance);
-      }
-      const json = await response.json();
-      const text = extractOpenAiText(json);
-      if (!text) return localNarration(label, guidance);
-      return text.trim();
-    } catch (_e) {
-      return localNarration(label, guidance);
-    }
-  }
-
   function runCampLifePhase(label) {
-    applyGuidanceInfluence();
-    consumeHumanActionInCamp();
     const alive = getAlivePlayers();
     if (!alive.length) return;
 
@@ -642,11 +728,11 @@ Rédige 2 phrases courtes, cohérentes, axées stratégie/alliance, sans invente
       }
     });
 
-    const phaseSnapshot = getCurrentPhase();
-    const episodeSnapshot = app.episode;
-    createOpenAiNarration(label).then((extraText) => {
-      if (extraText) logJournal("🤖", "Narration IA", extraText, phaseSnapshot, episodeSnapshot);
-    });
+    alive
+      .filter((p) => p.id !== app.humanPlayerId)
+      .forEach((p) => {
+        maybePushAiInitiatedMessage(p.id);
+      });
   }
 
   function computeChallengeWinner(players, kind) {
@@ -1451,7 +1537,11 @@ Rédige 2 phrases courtes, cohérentes, axées stratégie/alliance, sans invente
     app.councilInProgress = null;
     app.councilOccurredThisEpisode = false;
     app.humanPlayerId = setup.humanPlayerId;
-    app.humanPendingAction = null;
+    app.chatState = {
+      openWithPlayerId: null,
+      conversations: {},
+      personalities: {}
+    };
     app.journalCounter = 0;
     app.targetHistoryByEpisode = {};
     app.jury = [];
@@ -1478,8 +1568,21 @@ Rédige 2 phrases courtes, cohérentes, axées stratégie/alliance, sans invente
 
   function bindGameEvents() {
     el.nextPhaseButton.addEventListener("click", runCurrentPhase);
-    el.applyHumanAction.addEventListener("click", applyHumanAction);
     el.closeTargetModal.addEventListener("click", closeTargetModal);
+    if (el.closeChatModal) {
+      el.closeChatModal.addEventListener("click", closeChatModal);
+    }
+    if (el.chatSendButton) {
+      el.chatSendButton.addEventListener("click", sendChatMessage);
+    }
+    if (el.chatInput) {
+      el.chatInput.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" && !event.shiftKey) {
+          event.preventDefault();
+          sendChatMessage();
+        }
+      });
+    }
     el.closeCouncilModal.addEventListener("click", () => {
       if (!resolveCouncilPhaseAdvance()) {
         addCouncilLog("Le conseil doit être mené jusqu'au résultat avant de fermer la fenêtre.");
@@ -1509,7 +1612,6 @@ Rédige 2 phrases courtes, cohérentes, axées stratégie/alliance, sans invente
   window.SurvivorGameplay = {
     bindGameEvents,
     initGame,
-    applyHumanAction,
     runCurrentPhase,
     closeTargetModal
   };

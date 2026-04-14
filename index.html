@@ -203,33 +203,12 @@
           </main>
 
           <aside class="panel glass control-panel">
-            <h2>Contrôle narratif</h2>
-            <label>
-              Directive pour l'IA (contexte social / stratégie)
-              <textarea
-                id="aiGuidance"
-                rows="6"
-                placeholder="Ex: Je veux jouer discret, viser les leaders de l'autre tribu et sécuriser une alliance de 3."
-              ></textarea>
-            </label>
-            <div class="action-box">
-              <h3>Action du joueur humain</h3>
-              <label>
-                Action
-                <select id="humanActionType">
-                  <option value="social">Renforcer un lien social</option>
-                  <option value="alliance">Proposer une alliance</option>
-                  <option value="target">Cibler un joueur</option>
-                  <option value="searchIdol">Chercher une idole</option>
-                  <option value="layLow">Rester discret</option>
-                </select>
-              </label>
-              <label>
-                Cible
-                <select id="humanActionTarget"></select>
-              </label>
-              <button id="applyHumanAction" class="secondary">Appliquer l'action</button>
-              <p class="hint">Utilisable surtout durant les phases de vie de camp / discussions.</p>
+            <h2>Chat de Tribu (Joueur Humain)</h2>
+            <p class="hint">
+              Clique sur un joueur de ta tribu dans les cartes pour ouvrir une conversation privée.
+            </p>
+            <div id="chatLaunchArea" class="chat-launch-area">
+              <p class="hint">Aucun chat ouvert pour le moment.</p>
             </div>
           </aside>
         </div>
@@ -270,6 +249,25 @@
         <div id="councilLog" class="journal-feed compact"></div>
         <div id="councilActions" class="setup-actions">
           <button id="councilContinueButton" class="primary hidden">Continuer</button>
+        </div>
+      </div>
+    </dialog>
+
+    <dialog id="chatModal" class="modal chat-modal">
+      <div class="modal-content glass">
+        <header>
+          <h3 id="chatTitle">Chat</h3>
+          <button id="closeChatModal" class="secondary">Fermer</button>
+        </header>
+        <div id="chatPersonalityHint" class="hint"></div>
+        <div id="chatFeed" class="journal-feed compact chat-feed"></div>
+        <div class="chat-composer">
+          <textarea
+            id="chatInput"
+            rows="3"
+            placeholder="Écris ton message..."
+          ></textarea>
+          <button id="chatSendButton" class="primary">Envoyer</button>
         </div>
       </div>
     </dialog>

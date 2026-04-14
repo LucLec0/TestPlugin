@@ -793,59 +793,49 @@
     const key = String(app.openAi?.key || "").trim();
     const model = String(app.openAi?.model || "gpt-4.1-mini").trim();
     if (!key || !prompt) return "";
-    const endpoints = [
-      {
-        url: "https://api.openai.com/v1/responses",
-        buildBody: () => ({
-          model,
-          input: prompt
-        }),
-        parse: extractOpenAiText
-      },
-      {
-        url: "https://api.openai.com/v1/chat/completions",
-        buildBody: () => ({
-          model,
-          messages: [{ role: "user", content: prompt }],
-          temperature: 0.9
-        }),
-        parse: (json) => json?.choices?.[0]?.message?.content || ""
-      }
-    ];
 
-    for (const endpoint of endpoints) {
-      try {
-        const response = await fetch(endpoint.url, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${key}`
-          },
-          body: JSON.stringify(endpoint.buildBody())
-        });
-        if (!response.ok) {
-          let details = "";
-          try {
-            const err = await response.json();
-            details = err?.error?.message || "";
-          } catch (_ignore) {
-            // ignore parse errors
-          }
-          logJournal(
-            "⚠️",
-            "OpenAI",
-            `Réponse API ${response.status}${details ? `: ${details}` : ""}.`
-          );
-          continue;
-        }
-        const json = await response.json();
-        const text = String(endpoint.parse(json) || "").trim();
-        if (text) return text;
-      } catch (error) {
-        logJournal("⚠️", "OpenAI", `Erreur réseau OpenAI: ${escapeHtml(error?.message || "inconnue")}.`);
-      }
+    if (window.location.protocol === "file:") {
+      logJournal(
+        "⚠️",
+        "OpenAI",
+        "Le chat OpenAI nécessite un serveur local (http://...), pas une ouverture directe du fichier index.html."
+      );
+      return "";
     }
-    return "";
+
+    try {
+      const response = await fetch("/api/openai/chat", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          key,
+          model,
+          prompt
+        })
+      });
+
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        const details = payload?.error || `Erreur HTTP ${response.status}`;
+        logJournal("⚠️", "OpenAI", `Proxy OpenAI: ${escapeHtml(details)}.`);
+        return "";
+      }
+      const text = String(payload?.text || "").trim();
+      if (text) return text;
+      if (payload?.error) {
+        logJournal("⚠️", "OpenAI", `Proxy OpenAI: ${escapeHtml(payload.error)}.`);
+      }
+      return "";
+    } catch (error) {
+      logJournal(
+        "⚠️",
+        "OpenAI",
+        `Proxy OpenAI inaccessible (${escapeHtml(error?.message || "réseau")}). Lance le jeu via \"node app.js\" puis http://localhost:8787.`
+      );
+      return "";
+    }
   }
 
   function getChatPersonality(playerId) {

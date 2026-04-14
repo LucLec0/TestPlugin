@@ -23,114 +23,156 @@
       </header>
 
       <section id="setupScreen" class="screen active">
-        <div class="setup-grid">
-          <article class="panel glass">
-            <h2>1) Configuration générale</h2>
-            <div class="field-grid">
-              <label>
-                Nombre de joueurs (12 à 30)
-                <input id="playerCount" type="number" min="12" max="30" value="16" />
-              </label>
-              <label>
-                Nombre de tribus (2 à 4)
-                <input id="tribeCount" type="number" min="2" max="4" value="2" />
-              </label>
-              <label>
-                Joueurs restants pour la fusion
-                <input id="mergeAt" type="number" min="6" max="20" value="10" />
-              </label>
-              <label>
-                Joueur humain
-                <select id="humanPlayerSelect"></select>
-              </label>
+        <div class="setup-layout">
+          <aside class="panel glass setup-nav-panel">
+            <h2>Configuration guidée</h2>
+            <p class="hint">Passe étape par étape pour configurer correctement la simulation.</p>
+            <div id="setupStepTabs" class="setup-step-tabs">
+              <button type="button" class="setup-step-tab active" data-step="0">1. Général</button>
+              <button type="button" class="setup-step-tab" data-step="1">2. Tribus</button>
+              <button type="button" class="setup-step-tab" data-step="2">3. Joueurs</button>
+              <button type="button" class="setup-step-tab" data-step="3">4. Avantages</button>
             </div>
-            <p id="divisibilityWarning" class="warning"></p>
-          </article>
+            <p id="setupProgressText" class="hint"></p>
+            <div class="setup-actions setup-nav-actions">
+              <button id="prevSetupStep" class="secondary">← Étape précédente</button>
+              <button id="nextSetupStep" class="secondary">Étape suivante →</button>
+            </div>
+          </aside>
 
-          <article class="panel glass">
-            <h2>2) Tribus & Fusion</h2>
-            <div id="tribeEditor" class="list-editor"></div>
-            <h3>Tribu de fusion</h3>
-            <div class="field-grid">
-              <label>
-                Nom tribu fusion
-                <input id="mergeTribeName" type="text" value="Nexus" maxlength="22" />
-              </label>
-              <label>
-                Couleur tribu fusion
-                <input id="mergeTribeColor" type="color" value="#f59e0b" />
-              </label>
-            </div>
-          </article>
+          <div class="setup-main-column">
+            <article class="panel glass setup-pane active" data-step-pane="0">
+              <h2>1) Configuration générale</h2>
+              <div class="field-grid">
+                <label>
+                  Nombre de joueurs (12 à 30)
+                  <input id="playerCount" type="number" min="12" max="30" value="16" />
+                </label>
+                <label>
+                  Nombre de tribus (2 à 4)
+                  <input id="tribeCount" type="number" min="2" max="4" value="2" />
+                </label>
+                <label>
+                  Joueurs restants pour la fusion
+                  <input id="mergeAt" type="number" min="6" max="20" value="10" />
+                </label>
+                <label>
+                  Joueur humain
+                  <select id="humanPlayerSelect"></select>
+                </label>
+              </div>
+              <p id="divisibilityWarning" class="warning"></p>
+            </article>
 
-          <article class="panel glass">
-            <h2>3) Joueurs</h2>
-            <p class="hint">Tu peux modifier les noms et les tribus de départ.</p>
-            <div id="playersEditor" class="list-editor players-editor"></div>
-          </article>
+            <article class="panel glass setup-pane" data-step-pane="1">
+              <h2>2) Tribus & Fusion</h2>
+              <p class="hint">Chaque tribu doit être nommée et colorée.</p>
+              <div id="tribeEditor" class="list-editor"></div>
+              <h3>Tribu de fusion</h3>
+              <div class="field-grid">
+                <label>
+                  Nom tribu fusion
+                  <input id="mergeTribeName" type="text" value="Nexus" maxlength="22" />
+                </label>
+                <label>
+                  Couleur tribu fusion
+                  <input id="mergeTribeColor" type="color" value="#f59e0b" />
+                </label>
+              </div>
+            </article>
 
-          <article class="panel glass">
-            <h2>4) Avantages & OpenAI</h2>
-            <div class="advantages-grid">
-              <label class="toggle"><input id="idolEnabled" type="checkbox" checked /> Idole cachée</label>
-              <label class="toggle"><input id="doubleVoteEnabled" type="checkbox" checked /> Double vote</label>
-              <label class="toggle"><input id="voteBlockEnabled" type="checkbox" checked /> Annule vote</label>
-              <label class="toggle"><input id="stealVoteEnabled" type="checkbox" checked /> Steal vote</label>
-              <label class="toggle"><input id="legacyEnabled" type="checkbox" checked /> Legacy</label>
-            </div>
-            <div class="field-grid">
-              <label>
-                Rareté (Double vote)
-                <select id="rarityDoubleVote">
-                  <option value="rare">Rare</option>
-                  <option value="veryRare" selected>Très rare</option>
-                  <option value="medium">Moyen</option>
-                </select>
-              </label>
-              <label>
-                Rareté (Annule vote)
-                <select id="rarityVoteBlock">
-                  <option value="rare" selected>Rare</option>
-                  <option value="veryRare">Très rare</option>
-                  <option value="medium">Moyen</option>
-                </select>
-              </label>
-              <label>
-                Rareté (Steal vote)
-                <select id="rarityStealVote">
-                  <option value="veryRare" selected>Très rare</option>
-                  <option value="rare">Rare</option>
-                  <option value="medium">Moyen</option>
-                </select>
-              </label>
-              <label>
-                Rareté (Legacy)
-                <select id="rarityLegacy">
-                  <option value="veryRare" selected>Très rare</option>
-                  <option value="rare">Rare</option>
-                  <option value="medium">Moyen</option>
-                </select>
-              </label>
-              <label>
-                Legacy jouable à (joueurs restants)
-                <input id="legacyPlayableAt" type="number" min="4" max="15" value="7" />
-              </label>
-            </div>
-            <div class="field-grid">
-              <label>
-                Clé API OpenAI (optionnel)
-                <input id="openAiKey" type="password" placeholder="sk-..." autocomplete="off" />
-              </label>
-              <label>
-                Modèle OpenAI
-                <input id="openAiModel" type="text" value="gpt-4.1-mini" />
-              </label>
-            </div>
-            <p class="hint">
-              Sans clé OpenAI, le simulateur utilise une IA locale tactique pour rester jouable.
-            </p>
-          </article>
+            <article class="panel glass setup-pane" data-step-pane="2">
+              <h2>3) Joueurs</h2>
+              <p class="hint">Configure tous les joueurs: nom + tribu. Aucun nom vide n'est autorisé.</p>
+              <div id="playersEditor" class="list-editor players-editor"></div>
+            </article>
+
+            <article class="panel glass setup-pane" data-step-pane="3">
+              <h2>4) Avantages & OpenAI</h2>
+              <div class="advantages-grid">
+                <label class="toggle"><input id="idolEnabled" type="checkbox" checked /> Idole cachée</label>
+                <label class="toggle"><input id="doubleVoteEnabled" type="checkbox" checked /> Double vote</label>
+                <label class="toggle"><input id="voteBlockEnabled" type="checkbox" checked /> Annule vote</label>
+                <label class="toggle"><input id="stealVoteEnabled" type="checkbox" checked /> Steal vote</label>
+                <label class="toggle"><input id="legacyEnabled" type="checkbox" checked /> Legacy</label>
+              </div>
+              <div class="field-grid">
+                <label>
+                  Rareté (Double vote)
+                  <select id="rarityDoubleVote">
+                    <option value="rare">Rare</option>
+                    <option value="veryRare" selected>Très rare</option>
+                    <option value="medium">Moyen</option>
+                  </select>
+                </label>
+                <label>
+                  Rareté (Annule vote)
+                  <select id="rarityVoteBlock">
+                    <option value="rare" selected>Rare</option>
+                    <option value="veryRare">Très rare</option>
+                    <option value="medium">Moyen</option>
+                  </select>
+                </label>
+                <label>
+                  Rareté (Steal vote)
+                  <select id="rarityStealVote">
+                    <option value="veryRare" selected>Très rare</option>
+                    <option value="rare">Rare</option>
+                    <option value="medium">Moyen</option>
+                  </select>
+                </label>
+                <label>
+                  Rareté (Legacy)
+                  <select id="rarityLegacy">
+                    <option value="veryRare" selected>Très rare</option>
+                    <option value="rare">Rare</option>
+                    <option value="medium">Moyen</option>
+                  </select>
+                </label>
+                <label>
+                  Legacy jouable à (joueurs restants)
+                  <input id="legacyPlayableAt" type="number" min="4" max="15" value="7" />
+                </label>
+              </div>
+              <div class="field-grid">
+                <label>
+                  Clé API OpenAI (optionnel)
+                  <input id="openAiKey" type="password" placeholder="sk-..." autocomplete="off" />
+                </label>
+                <label>
+                  Modèle OpenAI
+                  <input id="openAiModel" type="text" value="gpt-4.1-mini" />
+                </label>
+              </div>
+              <p class="hint">
+                Sans clé OpenAI, le simulateur utilise une IA locale tactique pour rester jouable.
+              </p>
+            </article>
+
+            <article class="panel glass setup-diagnostics-panel">
+              <h2>Diagnostic de lancement</h2>
+              <p id="setupBlockingMessage" class="diagnostic-title">
+                Analyse en cours...
+              </p>
+
+              <div>
+                <h3>Blocages (empêchent le lancement)</h3>
+                <ul id="setupBlockingList" class="diagnostic-list"></ul>
+              </div>
+
+              <div>
+                <h3>Avertissements (recommandés)</h3>
+                <ul id="setupWarningList" class="diagnostic-list"></ul>
+              </div>
+
+              <div>
+                <h3>Infos</h3>
+                <ul id="setupInfoList" class="diagnostic-list"></ul>
+              </div>
+            </article>
+          </div>
         </div>
+
         <div class="setup-actions">
           <button id="resetSetup" class="secondary">Réinitialiser</button>
           <button id="startGame" class="primary">Lancer la simulation</button>

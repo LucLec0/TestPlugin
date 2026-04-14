@@ -74,7 +74,7 @@
   };
 
   const DEFAULT_OPENAI_KEY =
-    "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";
+    "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";
 
   const app = {
     config: null,

@@ -70,6 +70,21 @@
     }
   }
 
+  function logCampChat(emoji, author, tribeId, text, episodeOverride = app.episode) {
+    app.chatState.campFeed.push({
+      id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      emoji,
+      author,
+      tribeId,
+      episode: episodeOverride,
+      text
+    });
+    if (app.chatState.campFeed.length > 300) {
+      app.chatState.campFeed = app.chatState.campFeed.slice(-300);
+    }
+    renderCampChatFeed();
+  }
+
   function addCouncilLog(text) {
     const node = document.createElement("article");
     node.className = "journal-entry";
@@ -80,6 +95,48 @@
       el.councilLog.appendChild(node);
     }
     el.councilLog.scrollTop = 0;
+  }
+
+  function getCampFeedVisibleTribeIds() {
+    const human = getPlayerById(app.humanPlayerId);
+    if (!human || !human.alive) {
+      return app.merged ? [app.mergeTribe?.id].filter(Boolean) : app.tribes.map((t) => t.id);
+    }
+    if (app.merged) {
+      return [app.mergeTribe?.id || human.tribeId].filter(Boolean);
+    }
+    return [human.tribeId];
+  }
+
+  function renderCampChatFeed() {
+    if (!el.campChatFeed) return;
+    const visibleTribes = new Set(getCampFeedVisibleTribeIds());
+    const messages = app.chatState.campFeed.filter((msg) => visibleTribes.has(msg.tribeId));
+    el.campChatFeed.innerHTML = "";
+    if (!messages.length) {
+      const empty = document.createElement("article");
+      empty.className = "journal-entry";
+      empty.innerHTML =
+        "<header><span class=\"meta\">🏕️ Chat de camp</span></header><p>Aucune discussion de camp pour le moment.</p>";
+      el.campChatFeed.appendChild(empty);
+      return;
+    }
+    messages.forEach((msg) => {
+      const item = document.createElement("article");
+      item.className = "journal-entry";
+      item.innerHTML = `<header><span class="meta">${msg.emoji} ${escapeHtml(msg.author)} • Épisode ${msg.episode}</span></header><p>${styleTextForJournal(msg.text)}</p>`;
+      el.campChatFeed.appendChild(item);
+    });
+    el.campChatFeed.scrollTop = el.campChatFeed.scrollHeight;
+  }
+
+  function switchCenterPane(mode) {
+    if (!el.journalPane || !el.campChatPane || !el.showJournalTab || !el.showCampChatTab) return;
+    const showJournal = mode !== "camp";
+    el.journalPane.classList.toggle("active", showJournal);
+    el.campChatPane.classList.toggle("active", !showJournal);
+    el.showJournalTab.classList.toggle("active", showJournal);
+    el.showCampChatTab.classList.toggle("active", !showJournal);
   }
 
   function clearJournalEntryHighlights() {
@@ -276,13 +333,136 @@
     return `<strong class="player-token" style="--tribe-color:${color}">${player.name}</strong>${humanBadge}`;
   }
 
+  function getTrustBandStyle(percent) {
+    if (percent >= 95) return { color: "#ec4899", label: "Adoration" };
+    if (percent >= 80) return { color: "#a855f7", label: "Alliance forte" };
+    if (percent >= 70) return { color: "#22c55e", label: "Alliance solide" };
+    if (percent >= 51) return { color: "#3b82f6", label: "Positif / ami" };
+    if (percent >= 50) return { color: "#ffffff", label: "Neutre" };
+    if (percent >= 40) return { color: "#fde047", label: "Méfiant" };
+    if (percent >= 20) return { color: "#f97316", label: "Hostile" };
+    return { color: "#ef4444", label: "Ennemi" };
+  }
+
+  function drawRelationsGraph(tribeId) {
+    const canvas = el.relationsCanvas;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    const nodes = getAliveByTribe(tribeId);
+    if (!nodes.length) return;
+
+    const dpr = window.devicePixelRatio || 1;
+    const width = canvas.clientWidth || 760;
+    const height = canvas.clientHeight || 520;
+    canvas.width = Math.floor(width * dpr);
+    canvas.height = Math.floor(height * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, width, height);
+
+    ctx.fillStyle = "rgba(5, 12, 30, 0.9)";
+    ctx.fillRect(0, 0, width, height);
+
+    const cx = width / 2;
+    const cy = height / 2;
+    const zoom = app.relationsView?.zoom || 1;
+    const radius = Math.min(width, height) * 0.36 * zoom;
+    const positioned = nodes.map((player, index) => {
+      const angle = (Math.PI * 2 * index) / Math.max(nodes.length, 1) - Math.PI / 2;
+      return {
+        player,
+        x: cx + Math.cos(angle) * radius,
+        y: cy + Math.sin(angle) * radius
+      };
+    });
+
+    for (let i = 0; i < positioned.length; i += 1) {
+      for (let j = i + 1; j < positioned.length; j += 1) {
+        const a = positioned[i];
+        const b = positioned[j];
+        const trustAB = a.player.trust[b.player.id] ?? 0;
+        const trustBA = b.player.trust[a.player.id] ?? 0;
+        const avgTrust = clamp((trustAB + trustBA) / 2, -100, 100);
+        const percent = Math.round((avgTrust + 100) / 2);
+        const band = getTrustBandStyle(percent);
+        ctx.strokeStyle = band.color;
+        ctx.lineWidth = percent >= 80 ? 2.8 : percent >= 60 ? 2 : 1.4;
+        ctx.globalAlpha = 0.85;
+        ctx.beginPath();
+        ctx.moveTo(a.x, a.y);
+        ctx.lineTo(b.x, b.y);
+        ctx.stroke();
+      }
+    }
+    ctx.globalAlpha = 1;
+
+    positioned.forEach((node) => {
+      ctx.beginPath();
+      ctx.fillStyle = "#ffffff";
+      ctx.arc(node.x, node.y, node.player.id === app.humanPlayerId ? 14 : 11, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = getTribeColor(node.player.tribeId);
+      ctx.lineWidth = 3;
+      ctx.stroke();
+
+      ctx.font = "600 12px Inter, sans-serif";
+      const labelWidth = Math.max(62, ctx.measureText(node.player.name).width + 18);
+      const labelX = node.x - labelWidth / 2;
+      const labelY = node.y + 16;
+      ctx.fillStyle = "rgba(7, 18, 43, 0.9)";
+      ctx.fillRect(labelX, labelY, labelWidth, 18);
+      ctx.fillStyle = "#f8fbff";
+      ctx.fillText(node.player.name, labelX + 9, labelY + 12.5);
+    });
+  }
+
+  function openRelationsModal(tribeId) {
+    if (!el.relationsModal) return;
+    app.relationsView = {
+      tribeId,
+      zoom: app.relationsView?.tribeId === tribeId ? app.relationsView.zoom || 1 : 1
+    };
+    el.relationsModalTitle.textContent = `Relations au sein de la tribu ${getTribeName(tribeId)}`;
+    drawRelationsGraph(tribeId);
+    el.relationsModal.showModal();
+  }
+
+  function closeRelationsModal() {
+    if (el.relationsModal?.open) el.relationsModal.close();
+  }
+
+  function renderEliminatedBoard() {
+    if (!el.eliminatedBoard) return;
+    const eliminated = app.players
+      .filter((p) => !p.alive)
+      .sort((a, b) => {
+        const aEp = a.eliminatedAt?.episode ?? 999;
+        const bEp = b.eliminatedAt?.episode ?? 999;
+        return aEp - bEp;
+      });
+    if (!eliminated.length) {
+      el.eliminatedBoard.innerHTML = `<p class="hint">Aucun joueur éliminé pour le moment.</p>`;
+      return;
+    }
+    el.eliminatedBoard.innerHTML = eliminated
+      .map((player, idx) => {
+        const rank = app.players.length - idx;
+        return `
+          <article class="eliminated-card">
+            <strong>${escapeHtml(player.name)}</strong>
+            <span>Éliminé • ${rank}e</span>
+          </article>
+        `;
+      })
+      .join("");
+  }
+
   function renderTribesBoard() {
     el.tribesBoard.innerHTML = "";
     const tribesToShow = app.merged ? [app.mergeTribe] : app.tribes;
     const human = getPlayerById(app.humanPlayerId);
     tribesToShow.forEach((tribe) => {
       const players = getAliveByTribe(tribe.id);
-      const eliminated = app.players.filter((p) => !p.alive && p.tribeId === tribe.id);
       const box = document.createElement("section");
       box.className = "tribe-box";
       box.innerHTML = `
@@ -291,20 +471,22 @@
           <span class="tribe-dot" style="background:${tribe.color}"></span>
           <strong>${tribe.name}</strong>
         </div>
-        <button class="secondary icon-button" data-open-target="${tribe.id}">🎯 Cible</button>
+        <div class="tribe-actions">
+          <button class="secondary icon-button" data-open-target="${tribe.id}" title="Tableau des targets">🎯</button>
+          <button class="secondary icon-button" data-open-relations="${tribe.id}" title="Tableau des liens">💗</button>
+        </div>
       </header>
       <div class="players-grid"></div>
     `;
       const list = box.querySelector(".players-grid");
 
-      [...players, ...eliminated].forEach((player) => {
+      players.forEach((player) => {
         const card = document.createElement("button");
         card.type = "button";
         card.className = "player-square";
         const canChat =
           Boolean(human?.alive && player.alive && player.id !== human.id) &&
           (app.merged || player.tribeId === human.tribeId);
-        if (!player.alive) card.classList.add("eliminated");
         if (player.immunized) card.classList.add("immune");
         if (player.id === app.humanPlayerId) card.classList.add("human-player-highlight");
         if (canChat) card.classList.add("chat-openable");
@@ -312,17 +494,16 @@
         const markers = [
           player.immunized ? "👑" : "",
           player.jury ? "⚖️" : "",
-          !player.alive ? "❌" : "",
           ...player.advantages.map((a) => ADVANTAGE_EMOJI[a.type])
         ]
           .filter(Boolean)
           .join(" ");
         card.innerHTML = `
         <div class="player-square-top">
-          <span class="player-square-name">${player.name}${player.id === app.humanPlayerId ? " 👤" : ""}</span>
+          <span class="player-square-name">${escapeHtml(player.name)}${player.id === app.humanPlayerId ? " 👤" : ""}</span>
           <span class="player-square-markers">${markers}</span>
         </div>
-        <small class="player-square-tribe">${tribe.name}</small>
+        <small class="player-square-tribe">${escapeHtml(tribe.name)}</small>
       `;
         if (canChat) {
           card.addEventListener("click", () => openChatWithPlayer(player.id));
@@ -332,8 +513,13 @@
       el.tribesBoard.appendChild(box);
     });
 
+    renderEliminatedBoard();
+
     el.tribesBoard.querySelectorAll("[data-open-target]").forEach((btn) => {
       btn.addEventListener("click", () => openTargetModal(btn.getAttribute("data-open-target")));
+    });
+    el.tribesBoard.querySelectorAll("[data-open-relations]").forEach((btn) => {
+      btn.addEventListener("click", () => openRelationsModal(btn.getAttribute("data-open-relations")));
     });
   }
 
@@ -472,9 +658,9 @@
       const item = document.createElement("article");
       item.className = `journal-entry chat-entry ${message.role}`;
       item.innerHTML = `<header><span class="meta">${message.author}</span></header><p>${styleTextForJournal(message.text)}</p>`;
-      if (el.chatFeed.firstChild) el.chatFeed.insertBefore(item, el.chatFeed.firstChild);
-      else el.chatFeed.appendChild(item);
+      el.chatFeed.appendChild(item);
     });
+    el.chatFeed.scrollTop = el.chatFeed.scrollHeight;
   }
 
   function applyChatImpact(human, aiPlayer, humanText, aiText) {
@@ -497,8 +683,9 @@
 
   async function buildAiChatReply(human, aiPlayer, userMessage) {
     const personality = getChatPersonality(aiPlayer.id);
+    const cleanUserMessage = String(userMessage || "").replace(/[\r\n]+/g, " ").trim();
     if (!app.openAi.key) {
-      return `${aiPlayer.name} (${personality}) : Je note ce que tu dis. On garde ça entre nous pour l'instant.`;
+      return `${aiPlayer.name} : Je note ce que tu dis. On garde ça entre nous pour l'instant.`;
     }
     try {
       const conversation = getConversation(aiPlayer.id).slice(-8);
@@ -512,7 +699,7 @@ Tu parles au joueur humain ${human.name}.
 Règles connues: tribus, alliances, votes, conseil, immunité.
 Contexte récent:
 ${history || "Aucun historique."}
-Message reçu: ${userMessage}
+Message reçu: ${cleanUserMessage}
 Réponds en français en 1 à 3 phrases, dans le rôle, avec logique stratégique et sociale.`;
       const response = await fetch("https://api.openai.com/v1/responses", {
         method: "POST",
@@ -556,6 +743,7 @@ Réponds en français en 1 à 3 phrases, dans le rôle, avec logique stratégiqu
     if (app.chatState.openWithPlayerId === playerId) {
       renderChatFeed(playerId);
     }
+    logCampChat("💬", aiPlayer.name, aiPlayer.tribeId, text);
     logJournal("💬", "Chat IA", `${aiPlayer.name} envoie un message privé à ${human.name}.`);
   }
 
@@ -574,9 +762,11 @@ Réponds en français en 1 à 3 phrases, dans le rôle, avec logique stratégiqu
     conversation.push({ role: "human", author: human.name, text: userMessage });
     if (el.chatInput) el.chatInput.value = "";
     renderChatFeed(targetId);
+    logCampChat("🗨️", human.name, human.tribeId, `${human.name} à ${aiPlayer.name}: ${userMessage}`);
     const reply = await buildAiChatReply(human, aiPlayer, userMessage);
     conversation.push({ role: "ai", author: aiPlayer.name, text: reply });
     renderChatFeed(targetId);
+    logCampChat("💬", aiPlayer.name, aiPlayer.tribeId, `${aiPlayer.name}: ${reply}`);
     applyChatImpact(human, aiPlayer, userMessage, reply);
     logJournal("💬", "Chat", `${human.name} discute avec ${aiPlayer.name}.`);
   }
@@ -591,15 +781,7 @@ Réponds en français en 1 à 3 phrases, dans le rôle, avec logique stratégiqu
     }
     app.chatState.openWithPlayerId = playerId;
     if (el.chatTitle) el.chatTitle.textContent = `Chat avec ${target.name}`;
-    if (el.chatPersonalityHint) {
-      el.chatPersonalityHint.textContent = `Personnalité perçue: ${getChatPersonality(target.id)}.`;
-    }
     renderChatFeed(playerId);
-    if (el.chatModal) el.chatModal.showModal();
-  }
-
-  function closeChatModal() {
-    if (el.chatModal?.open) el.chatModal.close();
   }
 
   function getIdolInGame() {
@@ -705,6 +887,7 @@ Réponds en français en 1 à 3 phrases, dans le rôle, avec logique stratégiqu
           label,
           `${actor.name} et ${target.name} partagent une discussion stratégique autour du feu de camp.`
         );
+        logCampChat("🗨️", actor.name, actor.tribeId, `${actor.name} échange une discussion stratégique avec ${target.name}.`);
       } else if (roll < 0.66) {
         increaseTrust(actor, target, -randInt(7, 16));
         maybeBreakAlliance(actor, target);
@@ -714,11 +897,13 @@ Réponds en français en 1 à 3 phrases, dans le rôle, avec logique stratégiqu
           label,
           `${actor.name} diffuse des doutes sur ${target.name}. La méfiance progresse dans la tribu.`
         );
+        logCampChat("⚡", actor.name, actor.tribeId, `${actor.name} sème le doute sur ${target.name} auprès de la tribu.`);
       } else {
         const spread = alive.filter((p) => p.tribeId === actor.tribeId && p.id !== actor.id);
         spread.forEach((p) => increaseTrust(p, actor, randInt(1, 5)));
         applyTargetDelta(actor, randInt(2, 5));
         logJournal("📣", label, `${actor.name} prend de la place socialement et devient plus visible.`);
+        logCampChat("📣", actor.name, actor.tribeId, `${actor.name} anime le camp et prend de la place socialement.`);
       }
     }
 
@@ -1000,7 +1185,10 @@ Réponds en français en 1 à 3 phrases, dans le rôle, avec logique stratégiqu
     return scored[0].target;
   }
 
-  function maybeUsePreVoteAdvantage(voter, councilPlayers, strategyContext) {
+  function maybeUsePreVoteAdvantage(voter, councilPlayers, strategyContext, forcedPlan = null) {
+    if (forcedPlan) {
+      return [...forcedPlan];
+    }
     const actions = [];
     const adv = voter.advantages;
     if (!adv.length) return actions;
@@ -1088,8 +1276,168 @@ Réponds en français en 1 à 3 phrases, dans le rôle, avec logique stratégiqu
     return entries.filter(([, val]) => val === topVotes).map(([id]) => id);
   }
 
-  function runCouncilComputation(tribeId) {
+  function consumeHumanAdvantage(human, type) {
+    if (!human) return false;
+    return removeAdvantage(human, type);
+  }
+
+  function cloneAdvantagesList(advantages) {
+    return (advantages || []).map((adv) => ({ ...adv }));
+  }
+
+  function snapshotCouncilAdvantages(players) {
+    const snap = new Map();
+    players.forEach((player) => {
+      snap.set(player.id, cloneAdvantagesList(player.advantages));
+    });
+    return snap;
+  }
+
+  function restoreCouncilAdvantages(snapshot) {
+    if (!snapshot) return;
+    snapshot.forEach((advantages, playerId) => {
+      const player = getPlayerById(playerId);
+      if (!player) return;
+      player.advantages = cloneAdvantagesList(advantages);
+    });
+  }
+
+  function normalizeHumanCouncilPlan(rawPlan, councilState) {
+    if (!rawPlan) return null;
+    const human = getPlayerById(app.humanPlayerId);
+    if (!human || !human.alive) return null;
+    const participantIds = new Set(councilState?.players || []);
+    if (!participantIds.has(human.id)) return null;
+    const candidateIds = (councilState?.players || []).filter((pid) => {
+      const p = getPlayerById(pid);
+      return p && p.id !== human.id && !p.immunized;
+    });
+    if (!candidateIds.length) return null;
+    const hasValidTarget = candidateIds.includes(rawPlan.targetId);
+    const fallbackTargetId = hasValidTarget ? rawPlan.targetId : candidateIds[0];
+    const sanitizeTarget = (value) => (candidateIds.includes(value) ? value : candidateIds[0]);
+    const idolTargetAllowed = new Set([human.id, ...candidateIds]);
+    const legacyAdv = human.advantages.find((adv) => adv.type === "legacy");
+    const legacyPlayableNow =
+      Boolean(legacyAdv) && (legacyAdv.playableAt == null || legacyAdv.playableAt === getAlivePlayers().length);
+    return {
+      voterId: human.id,
+      targetId: fallbackTargetId,
+      useDoubleVote: Boolean(rawPlan.useDoubleVote) && human.advantages.some((adv) => adv.type === "doubleVote"),
+      useVoteBlock: Boolean(rawPlan.useVoteBlock) && human.advantages.some((adv) => adv.type === "voteBlock"),
+      voteBlockTargetId: sanitizeTarget(rawPlan.voteBlockTargetId),
+      useStealVote: Boolean(rawPlan.useStealVote) && human.advantages.some((adv) => adv.type === "stealVote"),
+      stealVoteTargetId: sanitizeTarget(rawPlan.stealVoteTargetId),
+      useIdol: Boolean(rawPlan.useIdol) && human.advantages.some((adv) => adv.type === "idol"),
+      idolTargetId: idolTargetAllowed.has(rawPlan.idolTargetId) ? rawPlan.idolTargetId : human.id,
+      useLegacy: Boolean(rawPlan.useLegacy) && legacyPlayableNow
+    };
+  }
+
+  function buildHumanCouncilUi(councilState) {
+    const human = getPlayerById(app.humanPlayerId);
+    if (!human || !human.alive) return null;
+    if (!councilState.players.includes(human.id)) return null;
+    const legacyAdv = human.advantages.find((adv) => adv.type === "legacy");
+    const legacyPlayableNow =
+      Boolean(legacyAdv) && (legacyAdv.playableAt == null || legacyAdv.playableAt === getAlivePlayers().length);
+    const options = councilState.players
+      .map((id) => getPlayerById(id))
+      .filter((p) => p && p.id !== human.id && !p.immunized)
+      .map((p) => `<option value="${p.id}">${escapeHtml(p.name)}</option>`)
+      .join("");
+    if (!options) return null;
+    return `
+      <div class="human-council-box">
+        <h4>Ton vote au conseil</h4>
+        <label>Cible principale<select id="humanCouncilVoteTarget">${options}</select></label>
+        <label class="toggle"><input id="humanCouncilPlayDoubleVote" type="checkbox" ${
+          human.advantages.some((a) => a.type === "doubleVote") ? "" : "disabled"
+        } /> Jouer Double vote</label>
+        <label class="toggle"><input id="humanCouncilPlayVoteBlock" type="checkbox" ${
+          human.advantages.some((a) => a.type === "voteBlock") ? "" : "disabled"
+        } /> Jouer Annule vote</label>
+        <label>Cible Annule vote<select id="humanCouncilVoteBlockTarget">${options}</select></label>
+        <label class="toggle"><input id="humanCouncilPlayStealVote" type="checkbox" ${
+          human.advantages.some((a) => a.type === "stealVote") ? "" : "disabled"
+        } /> Jouer Steal vote</label>
+        <label>Cible Steal vote<select id="humanCouncilStealVoteTarget">${options}</select></label>
+        <label class="toggle"><input id="humanCouncilPlayIdol" type="checkbox" ${
+          human.advantages.some((a) => a.type === "idol") ? "" : "disabled"
+        } /> Jouer Idole</label>
+        <label>Sur qui jouer l'idole
+          <select id="humanCouncilIdolTarget">
+            <option value="${human.id}">${escapeHtml(human.name)} (toi)</option>
+            ${options}
+          </select>
+        </label>
+        <label class="toggle"><input id="humanCouncilPlayLegacy" type="checkbox" ${
+          legacyPlayableNow ? "" : "disabled"
+        } /> Jouer Legacy</label>
+        <button id="confirmHumanCouncilButton" class="primary">Valider mon plan</button>
+      </div>
+    `;
+  }
+
+  function readHumanCouncilPlan(councilState, explicitPlan = null) {
+    const human = getPlayerById(app.humanPlayerId);
+    if (!human || !human.alive) return null;
+    if (!councilState.players.includes(human.id)) return null;
+    if (explicitPlan) {
+      return normalizeHumanCouncilPlan(explicitPlan, councilState);
+    }
+    const targetId = document.getElementById("humanCouncilVoteTarget")?.value;
+    if (!targetId) return null;
+    const plan = {
+      voterId: human.id,
+      targetId,
+      useDoubleVote: Boolean(document.getElementById("humanCouncilPlayDoubleVote")?.checked),
+      useVoteBlock: Boolean(document.getElementById("humanCouncilPlayVoteBlock")?.checked),
+      voteBlockTargetId: document.getElementById("humanCouncilVoteBlockTarget")?.value || null,
+      useStealVote: Boolean(document.getElementById("humanCouncilPlayStealVote")?.checked),
+      stealVoteTargetId: document.getElementById("humanCouncilStealVoteTarget")?.value || null,
+      useIdol: Boolean(document.getElementById("humanCouncilPlayIdol")?.checked),
+      idolTargetId: document.getElementById("humanCouncilIdolTarget")?.value || human.id,
+      useLegacy: Boolean(document.getElementById("humanCouncilPlayLegacy")?.checked)
+    };
+    return normalizeHumanCouncilPlan(plan, councilState);
+  }
+
+  function applyHumanPlanToCouncil(councilState, blocked, stolen, doubled, explicitPlan = null) {
+    const human = getPlayerById(app.humanPlayerId);
+    if (!human) return [];
+    const plan = readHumanCouncilPlan(councilState, explicitPlan);
+    if (!plan) return [];
+    const actions = [];
+    const protections = [];
+    if (plan.useVoteBlock && plan.voteBlockTargetId && consumeHumanAdvantage(human, "voteBlock")) {
+      actions.push({ type: "voteBlock", actorId: human.id, targetId: plan.voteBlockTargetId });
+      blocked.add(plan.voteBlockTargetId);
+    }
+    if (plan.useStealVote && plan.stealVoteTargetId && consumeHumanAdvantage(human, "stealVote")) {
+      actions.push({ type: "stealVote", actorId: human.id, targetId: plan.stealVoteTargetId });
+      blocked.add(plan.stealVoteTargetId);
+      stolen[human.id] = (stolen[human.id] || 0) + 1;
+    }
+    if (plan.useDoubleVote && consumeHumanAdvantage(human, "doubleVote")) {
+      actions.push({ type: "doubleVote", actorId: human.id });
+      doubled.add(human.id);
+    }
+    if (plan.useIdol && plan.idolTargetId && consumeHumanAdvantage(human, "idol")) {
+      protections.push({ type: "idol", actorId: human.id, protectedId: plan.idolTargetId });
+    }
+    if (plan.useLegacy && consumeHumanAdvantage(human, "legacy")) {
+      protections.push({ type: "legacy", actorId: human.id, protectedId: human.id });
+    }
+    councilState.humanVoteTargetId = plan.targetId;
+    councilState.humanProtectionActions = protections;
+    return actions;
+  }
+
+  function runCouncilComputation(tribeId, humanOverride = null, options = {}) {
+    const { commit = true } = options;
     const players = getCouncilPlayers(tribeId);
+    const advantageSnapshot = commit ? null : snapshotCouncilAdvantages(players);
     const expectedVotesOn = {};
     players.forEach((voter) => {
       const provisional = chooseVoteTarget(voter, players);
@@ -1101,8 +1449,13 @@ Réponds en français en 1 à 3 phrases, dans le rôle, avec logique stratégiqu
     const blocked = new Set();
     const stolen = {};
     const doubled = new Set();
+    const humanId = app.humanPlayerId;
+    const hasHumanOverride = Boolean(humanOverride && humanOverride.voterId === humanId);
+    let humanVoteTargetId = hasHumanOverride ? humanOverride.targetId : null;
+    let humanProtectionActions = [];
 
     players.forEach((voter) => {
+      if (hasHumanOverride && voter.id === humanId) return;
       const actions = maybeUsePreVoteAdvantage(voter, players, strategyContext);
       actions.forEach((action) => {
         preActions.push(action);
@@ -1114,16 +1467,40 @@ Réponds en français en 1 à 3 phrases, dans le rôle, avec logique stratégiqu
         if (action.type === "doubleVote") doubled.add(action.actorId);
       });
     });
+    if (hasHumanOverride) {
+      const virtualCouncilState = {
+        players: players.map((p) => p.id),
+        humanVoteTargetId,
+        humanProtectionActions: [],
+        humanPlan: humanOverride
+      };
+      const humanActions = applyHumanPlanToCouncil(virtualCouncilState, blocked, stolen, doubled, humanOverride);
+      preActions.push(...humanActions);
+      humanVoteTargetId = virtualCouncilState.humanVoteTargetId || humanVoteTargetId;
+      humanProtectionActions = [...(virtualCouncilState.humanProtectionActions || [])];
+    }
 
     const votes = [];
     players.forEach((voter) => {
       if (blocked.has(voter.id)) return;
-      const baseTarget = chooseVoteTarget(voter, players);
+      let baseTarget = null;
+      if (hasHumanOverride && voter.id === humanId) {
+        const forced = getPlayerById(humanVoteTargetId);
+        if (forced && forced.alive && !forced.immunized && forced.id !== voter.id) {
+          baseTarget = forced;
+        }
+      }
+      if (!baseTarget) {
+        baseTarget = chooseVoteTarget(voter, players);
+      }
       if (!baseTarget) return;
       const extraVotes = (doubled.has(voter.id) ? 1 : 0) + (stolen[voter.id] || 0);
       votes.push({ voterId: voter.id, targetId: baseTarget.id, weight: 1, source: "normal" });
       for (let i = 0; i < extraVotes; i += 1) {
-        const nextTarget = chooseVoteTarget(voter, players);
+        const nextTarget =
+          hasHumanOverride && voter.id === humanId && baseTarget
+            ? baseTarget
+            : chooseVoteTarget(voter, players);
         if (nextTarget) {
           votes.push({
             voterId: voter.id,
@@ -1140,7 +1517,11 @@ Réponds en français en 1 à 3 phrases, dans le rôle, avec logique stratégiqu
       firstCountMap[v.targetId] = (firstCountMap[v.targetId] || 0) + v.weight;
     });
     const remainingCount = getAlivePlayers().length;
-    const protections = maybeUsePostVoteProtection(players, firstCountMap, remainingCount);
+    const protections = [...humanProtectionActions];
+    const aiProtections = maybeUsePostVoteProtection(players, firstCountMap, remainingCount).filter(
+      (action) => !(hasHumanOverride && action.actorId === humanId)
+    );
+    protections.push(...aiProtections);
     let tally = tallyVotes(votes, protections);
     let top = getTopTargets(tally.counted);
 
@@ -1177,7 +1558,7 @@ Réponds en français en 1 à 3 phrases, dans le rôle, avec logique stratégiqu
       }
     }
 
-    return {
+    const result = {
       tribeId,
       players: players.map((p) => p.id),
       preActions,
@@ -1187,8 +1568,35 @@ Réponds en français en 1 à 3 phrases, dans le rôle, avec logique stratégiqu
       top,
       tieRound,
       rocksResult,
-      eliminatedId: top[0] || null
+      eliminatedId: top[0] || null,
+      humanOverride
     };
+    if (!commit) {
+      restoreCouncilAdvantages(advantageSnapshot);
+    }
+    return result;
+  }
+
+  function lockCouncilComputation(councilState) {
+    if (!councilState || councilState.computationLocked) return councilState;
+    const participantSet = new Set(councilState.players || []);
+    let humanPlan = councilState.humanPlan || null;
+    if (!humanPlan && participantSet.has(app.humanPlayerId)) {
+      humanPlan = readHumanCouncilPlan(councilState);
+    }
+    const committed = runCouncilComputation(councilState.tribeId, humanPlan, { commit: true });
+    const nextState = {
+      ...councilState,
+      ...committed,
+      humanPlan,
+      revealIndex: 0,
+      revealSequence: shuffle([...(committed.tally?.visible || [])]),
+      stage: 0,
+      phaseResolved: false,
+      runningTally: {},
+      computationLocked: true
+    };
+    return nextState;
   }
 
   function renderCouncilParticipants(councilState) {
@@ -1204,13 +1612,17 @@ Réponds en français en 1 à 3 phrases, dans le rôle, avec logique stratégiqu
   }
 
   function openCouncilModal(councilState) {
+    const previewState = runCouncilComputation(councilState.tribeId, null, { commit: false });
     app.councilInProgress = {
       ...councilState,
+      ...previewState,
       revealIndex: 0,
-      revealSequence: shuffle([...councilState.tally.visible]),
+      revealSequence: shuffle([...(previewState.tally?.visible || [])]),
       stage: 0,
       phaseResolved: false,
-      runningTally: {}
+      runningTally: {},
+      humanPlan: null,
+      computationLocked: false
     };
     el.councilTitle.textContent = `Conseil Tribal - ${getTribeName(councilState.tribeId)}`;
     el.councilLog.innerHTML = "";
@@ -1223,6 +1635,34 @@ Réponds en français en 1 à 3 phrases, dans le rôle, avec logique stratégiqu
     el.councilContinueButton.textContent = "Commencer le conseil";
     renderCouncilParticipants(councilState);
     el.humanCouncilControls.innerHTML = "";
+    const humanUi = buildHumanCouncilUi(app.councilInProgress);
+    if (humanUi) {
+      el.humanCouncilControls.innerHTML = humanUi;
+      const confirmButton = document.getElementById("confirmHumanCouncilButton");
+      if (confirmButton) {
+        confirmButton.addEventListener("click", () => {
+          const plan = readHumanCouncilPlan(app.councilInProgress);
+          if (!plan) {
+            addCouncilLog("Plan de vote humain invalide.");
+            return;
+          }
+          const recomputed = runCouncilComputation(councilState.tribeId, plan, { commit: false });
+          app.councilInProgress = {
+            ...app.councilInProgress,
+            ...recomputed,
+            humanPlan: plan,
+            revealIndex: 0,
+            revealSequence: shuffle([...(recomputed.tally?.visible || [])]),
+            stage: 0,
+            phaseResolved: false,
+            runningTally: {},
+            computationLocked: false
+          };
+          addCouncilLog("Plan humain confirmé. Le conseil est recalculé avec ton vote.");
+          el.humanCouncilControls.innerHTML = "<p class=\"hint\">Plan validé. Tu peux lancer le vote.</p>";
+        });
+      }
+    }
     el.councilStepInfo.textContent = "Le conseil débute. Les joueurs s'installent.";
     el.councilModal.showModal();
   }
@@ -1249,8 +1689,15 @@ Réponds en français en 1 à 3 phrases, dans le rôle, avec logique stratégiqu
   }
 
   function councilStageRunner() {
-    const c = app.councilInProgress;
+    let c = app.councilInProgress;
     if (!c) return;
+    if (c.stage === 0 && !c.computationLocked) {
+      c = lockCouncilComputation(c);
+      app.councilInProgress = c;
+      if (el.humanCouncilControls && c.humanPlan) {
+        el.humanCouncilControls.innerHTML = "<p class=\"hint\">Plan verrouillé pour ce conseil.</p>";
+      }
+    }
     if (c.stage === 0) {
       el.councilStepInfo.textContent = "1/5 - Fenêtre d'avantages pré-vote";
       if (!c.preActions.length) {
@@ -1412,12 +1859,24 @@ Réponds en français en 1 à 3 phrases, dans le rôle, avec logique stratégiqu
   function runTribalCouncilPhase() {
     while (app.councilQueue.length > 0) {
       const tribeId = app.councilQueue.shift();
-      const councilState = runCouncilComputation(tribeId);
-      if (!councilState.players.length) {
+      const players = getCouncilPlayers(tribeId);
+      if (!players.length) {
         logJournal("🪵", "Conseil", `Le conseil de ${getTribeName(tribeId)} est annulé (aucun joueur votable).`);
         continue;
       }
-      openCouncilModal(councilState);
+      const draftState = {
+        tribeId,
+        players: players.map((p) => p.id),
+        preActions: [],
+        votes: [],
+        protections: [],
+        tally: { visible: [], counted: {} },
+        top: [],
+        tieRound: null,
+        rocksResult: null,
+        eliminatedId: null
+      };
+      openCouncilModal(draftState);
       return true;
     }
     logJournal("🪵", "Conseil", "Aucun conseil à jouer sur cet épisode.");
@@ -1540,7 +1999,9 @@ Réponds en français en 1 à 3 phrases, dans le rôle, avec logique stratégiqu
     app.chatState = {
       openWithPlayerId: null,
       conversations: {},
-      personalities: {}
+      personalities: {},
+      campFeed: [],
+      campUnread: 0
     };
     app.journalCounter = 0;
     app.targetHistoryByEpisode = {};
@@ -1553,10 +2014,13 @@ Réponds en français en 1 à 3 phrases, dans le rôle, avec logique stratégiqu
     initializeRelations(app.players);
 
     el.journalFeed.innerHTML = "";
+    if (el.campChatFeed) el.campChatFeed.innerHTML = "";
     el.setupScreen.classList.remove("active");
     el.gameScreen.classList.add("active");
     renderTribesBoard();
     renderHumanTargetOptions();
+    renderCampChatFeed();
+    switchCenterPane("journal");
     updateTopBar();
     recordTargetSnapshot();
     logJournal(
@@ -1569,8 +2033,38 @@ Réponds en français en 1 à 3 phrases, dans le rôle, avec logique stratégiqu
   function bindGameEvents() {
     el.nextPhaseButton.addEventListener("click", runCurrentPhase);
     el.closeTargetModal.addEventListener("click", closeTargetModal);
-    if (el.closeChatModal) {
-      el.closeChatModal.addEventListener("click", closeChatModal);
+    if (el.showJournalTab) {
+      el.showJournalTab.addEventListener("click", () => switchCenterPane("journal"));
+    }
+    if (el.showCampChatTab) {
+      el.showCampChatTab.addEventListener("click", () => switchCenterPane("camp"));
+    }
+    if (el.closeRelationsModal) {
+      el.closeRelationsModal.addEventListener("click", closeRelationsModal);
+    }
+    if (el.relationsZoomIn) {
+      el.relationsZoomIn.addEventListener("click", () => {
+        const tribeId = app.relationsView?.tribeId;
+        if (!tribeId) return;
+        app.relationsView.zoom = clamp((app.relationsView.zoom || 1) + 0.1, 0.6, 1.6);
+        drawRelationsGraph(tribeId);
+      });
+    }
+    if (el.relationsZoomOut) {
+      el.relationsZoomOut.addEventListener("click", () => {
+        const tribeId = app.relationsView?.tribeId;
+        if (!tribeId) return;
+        app.relationsView.zoom = clamp((app.relationsView.zoom || 1) - 0.1, 0.6, 1.6);
+        drawRelationsGraph(tribeId);
+      });
+    }
+    if (el.relationsResetView) {
+      el.relationsResetView.addEventListener("click", () => {
+        const tribeId = app.relationsView?.tribeId;
+        if (!tribeId) return;
+        app.relationsView.zoom = 1;
+        drawRelationsGraph(tribeId);
+      });
     }
     if (el.chatSendButton) {
       el.chatSendButton.addEventListener("click", sendChatMessage);
@@ -1605,6 +2099,9 @@ Réponds en français en 1 à 3 phrases, dans le rôle, avec logique stratégiqu
         const title = el.targetModalTitle.textContent || "";
         const tribe = [...app.tribes, app.mergeTribe].find((t) => title.includes(t?.name || ""));
         if (tribe) drawTargetHistoryChart(tribe.id);
+      }
+      if (el.relationsModal?.open && app.relationsView?.tribeId) {
+        drawRelationsGraph(app.relationsView.tribeId);
       }
     });
   }

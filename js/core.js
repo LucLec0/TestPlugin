@@ -90,6 +90,7 @@
     humanPendingAction: null,
     guidance: "",
     journalCounter: 0,
+    targetHistoryByEpisode: {},
     jury: [],
     finalThreeReached: false,
     winnerDeclared: false,
@@ -162,6 +163,9 @@
     revealCounter: document.getElementById("revealCounter"),
     councilLog: document.getElementById("councilLog"),
     councilContinueButton: document.getElementById("councilContinueButton"),
+    councilRunningTally: document.getElementById("councilRunningTally"),
+    targetChartCanvas: document.getElementById("targetChartCanvas"),
+    targetChartLegend: document.getElementById("targetChartLegend"),
     journalEntryTemplate: document.getElementById("journalEntryTemplate")
   };
 

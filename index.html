@@ -243,6 +243,10 @@
           <button id="closeTargetModal" class="secondary">Fermer</button>
         </header>
         <div id="targetModalBody"></div>
+        <div class="target-chart-shell">
+          <canvas id="targetChartCanvas" height="240"></canvas>
+          <div id="targetChartLegend" class="target-chart-legend"></div>
+        </div>
       </div>
     </dialog>
 
@@ -262,6 +266,7 @@
           </div>
           <small id="revealCounter"></small>
         </div>
+        <div id="councilRunningTally" class="council-running-tally hidden"></div>
         <div id="councilLog" class="journal-feed compact"></div>
         <div id="councilActions" class="setup-actions">
           <button id="councilContinueButton" class="primary hidden">Continuer</button>

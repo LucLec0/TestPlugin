@@ -57,9 +57,14 @@
     const entry = frag.querySelector(".journal-entry");
     const phaseText = PHASE_LABELS[phaseOverride] || phaseOverride || "Phase";
     frag.querySelector(".meta").textContent = `${emoji} ${title} • Épisode ${episodeOverride} • ${phaseText}`;
-    frag.querySelector("p").textContent = text;
-    el.journalFeed.appendChild(frag);
-    el.journalFeed.scrollTop = el.journalFeed.scrollHeight;
+    frag.querySelector("p").innerHTML = styleTextForJournal(text);
+    if (entry) entry.classList.add("new-phase-entry");
+    if (el.journalFeed.firstChild) {
+      el.journalFeed.insertBefore(frag, el.journalFeed.firstChild);
+    } else {
+      el.journalFeed.appendChild(frag);
+    }
+    el.journalFeed.scrollTop = 0;
     if (entry) {
       void entry.offsetHeight;
     }
@@ -68,9 +73,19 @@
   function addCouncilLog(text) {
     const node = document.createElement("article");
     node.className = "journal-entry";
-    node.innerHTML = `<header><span class="meta">🔥 Conseil</span></header><p>${text}</p>`;
-    el.councilLog.appendChild(node);
-    el.councilLog.scrollTop = el.councilLog.scrollHeight;
+    node.innerHTML = `<header><span class="meta">🔥 Conseil</span></header><p>${styleTextForJournal(text)}</p>`;
+    if (el.councilLog.firstChild) {
+      el.councilLog.insertBefore(node, el.councilLog.firstChild);
+    } else {
+      el.councilLog.appendChild(node);
+    }
+    el.councilLog.scrollTop = 0;
+  }
+
+  function clearJournalEntryHighlights() {
+    el.journalFeed.querySelectorAll(".journal-entry.new-phase-entry").forEach((entry) => {
+      entry.classList.remove("new-phase-entry");
+    });
   }
 
   function getAlivePlayers() {
@@ -95,6 +110,139 @@
     if (app.mergeTribe?.id === tribeId) return app.mergeTribe.name;
     const tribe = app.tribes.find((t) => t.id === tribeId);
     return tribe ? tribe.name : "Inconnu";
+  }
+
+  function getTribeColor(tribeId) {
+    if (app.mergeTribe?.id === tribeId) return app.mergeTribe.color;
+    const tribe = app.tribes.find((t) => t.id === tribeId);
+    return tribe?.color || "#93c5fd";
+  }
+
+  function escapeRegExp(value) {
+    return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  }
+
+  function styleTextForJournal(text) {
+    let output = text;
+    const sortedTribes = [...app.tribes, app.mergeTribe].filter(Boolean);
+    sortedTribes.forEach((tribe) => {
+      const color = getTribeColor(tribe.id);
+      if (!tribe?.name) return;
+      const re = new RegExp(`\\b${escapeRegExp(tribe.name)}\\b`, "g");
+      output = output.replace(
+        re,
+        `<span class="tribe-token" style="--tribe-color:${color}">${tribe.name}</span>`
+      );
+    });
+    app.players.forEach((player) => {
+      const color = getTribeColor(player.tribeId);
+      if (!player?.name) return;
+      const re = new RegExp(`\\b${escapeRegExp(player.name)}\\b`, "g");
+      output = output.replace(
+        re,
+        `<strong class="player-token" style="--tribe-color:${color}">${player.name}</strong>`
+      );
+    });
+    return output;
+  }
+
+  function recordTargetSnapshot() {
+    const alive = getAlivePlayers();
+    app.targetHistoryByEpisode[app.episode] = app.targetHistoryByEpisode[app.episode] || {};
+    alive.forEach((player) => {
+      app.targetHistoryByEpisode[app.episode][player.id] = Math.round(player.target);
+    });
+  }
+
+  function drawTargetHistoryChart(tribeId) {
+    const canvas = el.targetChartCanvas;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    const dpr = window.devicePixelRatio || 1;
+    const width = canvas.clientWidth || canvas.width;
+    const height = canvas.clientHeight || canvas.height;
+    canvas.width = Math.floor(width * dpr);
+    canvas.height = Math.floor(height * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, width, height);
+
+    const margin = { top: 16, right: 18, bottom: 26, left: 34 };
+    const chartW = width - margin.left - margin.right;
+    const chartH = height - margin.top - margin.bottom;
+    if (chartW <= 0 || chartH <= 0) return;
+
+    ctx.strokeStyle = "rgba(147,197,253,0.2)";
+    ctx.lineWidth = 1;
+    for (let y = 0; y <= 5; y += 1) {
+      const yy = margin.top + (chartH * y) / 5;
+      ctx.beginPath();
+      ctx.moveTo(margin.left, yy);
+      ctx.lineTo(width - margin.right, yy);
+      ctx.stroke();
+      const value = 100 - y * 20;
+      ctx.fillStyle = "rgba(226,232,240,0.8)";
+      ctx.font = "11px Inter, sans-serif";
+      ctx.fillText(`${value}`, 4, yy + 4);
+    }
+
+    const episodes = Object.keys(app.targetHistoryByEpisode)
+      .map(Number)
+      .sort((a, b) => a - b);
+    if (!episodes.length) return;
+    const minEpisode = episodes[0];
+    const maxEpisode = episodes[episodes.length - 1];
+    const span = Math.max(1, maxEpisode - minEpisode);
+
+    const players = app.players.filter((p) => p.tribeId === tribeId);
+    el.targetChartLegend.innerHTML = "";
+    players.forEach((player) => {
+      const color = getTribeColor(player.tribeId);
+      const points = [];
+      episodes.forEach((ep) => {
+        const value = app.targetHistoryByEpisode[ep]?.[player.id];
+        if (typeof value !== "number") return;
+        const x = margin.left + ((ep - minEpisode) / span) * chartW;
+        const y = margin.top + chartH - (value / 100) * chartH;
+        points.push({ x, y, ep, value });
+      });
+      if (points.length < 2) return;
+
+      ctx.strokeStyle = color;
+      ctx.lineWidth = player.id === app.humanPlayerId ? 3 : 2;
+      ctx.beginPath();
+      points.forEach((pt, idx) => {
+        if (idx === 0) ctx.moveTo(pt.x, pt.y);
+        else ctx.lineTo(pt.x, pt.y);
+      });
+      ctx.stroke();
+
+      ctx.fillStyle = color;
+      points.forEach((pt) => {
+        ctx.beginPath();
+        ctx.arc(pt.x, pt.y, player.id === app.humanPlayerId ? 3.5 : 2.5, 0, Math.PI * 2);
+        ctx.fill();
+      });
+
+      const legendItem = document.createElement("span");
+      legendItem.className = "target-legend-item";
+      legendItem.innerHTML = `<i style="background:${color}"></i>${player.name}${player.id === app.humanPlayerId ? " (Humain)" : ""}`;
+      el.targetChartLegend.appendChild(legendItem);
+    });
+
+    ctx.fillStyle = "rgba(226,232,240,0.85)";
+    ctx.font = "11px Inter, sans-serif";
+    episodes.forEach((ep) => {
+      const x = margin.left + ((ep - minEpisode) / span) * chartW;
+      ctx.fillText(`E${ep}`, x - 8, height - 8);
+    });
+  }
+
+  function formatPlayerNameInList(player) {
+    const color = getTribeColor(player.tribeId);
+    const humanBadge = player.id === app.humanPlayerId ? " 👤" : "";
+    return `<strong class="player-token" style="--tribe-color:${color}">${player.name}</strong>${humanBadge}`;
   }
 
   function renderTribesBoard() {
@@ -125,8 +273,9 @@
         const li = document.createElement("li");
         if (!player.alive) li.classList.add("eliminated");
         if (player.immunized) li.classList.add("immune");
+        if (player.id === app.humanPlayerId) li.classList.add("human-player-highlight");
         li.innerHTML = `
-        <span>${player.name}</span>
+        <span>${formatPlayerNameInList(player)}</span>
         <span class="player-meta">${crown} ${jury} ${eliminatedBadge} ${advantageBadges}</span>
       `;
         list.appendChild(li);
@@ -141,12 +290,15 @@
 
   function renderHumanTargetOptions() {
     const human = getPlayerById(app.humanPlayerId);
+    if (!human) {
+      el.humanActionTarget.innerHTML = "";
+      return;
+    }
     const alive = getAlivePlayers().filter((p) => p.id !== app.humanPlayerId);
-    const sameTribe = alive.filter((p) => p.tribeId === human.tribeId);
-    const others = alive.filter((p) => p.tribeId !== human.tribeId);
-    const options = [...sameTribe, ...others];
+    const sameTribe = app.merged ? alive : alive.filter((p) => p.tribeId === human.tribeId);
+    const options = sameTribe;
     el.humanActionTarget.innerHTML = options
-      .map((p) => `<option value="${p.id}">${p.name} (${getTribeName(p.tribeId)})</option>`)
+      .map((p) => `<option value="${p.id}">${p.name}</option>`)
       .join("");
   }
 
@@ -162,6 +314,7 @@
       row.innerHTML = `<span>${player.name}</span><strong>${Math.round(player.target)}%</strong>`;
       el.targetModalBody.appendChild(row);
     });
+    drawTargetHistoryChart(tribeId);
     el.targetModal.showModal();
   }
 
@@ -218,6 +371,10 @@
     if (!human || !human.alive) return;
     const type = el.humanActionType.value;
     const target = getPlayerById(el.humanActionTarget.value);
+    if (!app.merged && target && target.tribeId !== human.tribeId) {
+      logJournal("⛔", "Action refusée", `${human.name} ne peut interagir qu'avec sa propre tribu avant la fusion.`);
+      return;
+    }
     app.humanPendingAction = { type, targetId: target?.id ?? null };
     logJournal("🧭", "Directive joueur", `Action préparée: ${human.name} -> ${describeHumanAction(app.humanPendingAction)}`);
   }
@@ -568,12 +725,13 @@ Rédige 2 phrases courtes, cohérentes, axées stratégie/alliance, sans invente
     results.forEach((r, idx) => {
       if (idx === 0) {
         const tribePlayers = getAliveByTribe(r.tribe.id);
-        const immunized = pickRandom(tribePlayers);
-        if (immunized) immunized.immunized = true;
+        tribePlayers.forEach((player) => {
+          player.immunized = true;
+        });
         logJournal(
           "🛡️",
           "Immunité tribale",
-          `La tribu ${r.tribe.name} remporte l'immunité.${immunized ? ` ${immunized.name} obtient aussi une protection symbolique.` : ""}`
+          `La tribu ${r.tribe.name} remporte l'immunité. Toute la tribu est protégée pour ce conseil.`
         );
       } else if (app.losingTribesLastImmunity.includes(r.tribe.id)) {
         logJournal("🔥", "Tribu en danger", `${r.tribe.name} perd l'immunité et devra aller au conseil.`);
@@ -627,6 +785,29 @@ Rédige 2 phrases courtes, cohérentes, axées stratégie/alliance, sans invente
         `Les tribus fusionnent dans la nouvelle tribu ${app.mergeTribe.name}. La compétition devient individuelle.`
       );
     }
+  }
+
+  function renderCouncilRunningTally(tallyMap) {
+    if (!el.councilRunningTally) return;
+    const entries = Object.entries(tallyMap || {})
+      .map(([playerId, count]) => ({ player: getPlayerById(playerId), count }))
+      .filter((entry) => entry.player)
+      .sort((a, b) => b.count - a.count);
+
+    if (!entries.length) {
+      el.councilRunningTally.classList.add("hidden");
+      el.councilRunningTally.innerHTML = "";
+      return;
+    }
+
+    el.councilRunningTally.classList.remove("hidden");
+    const lines = entries
+      .map(
+        (entry) =>
+          `<span class="running-tally-chip">${formatPlayerNameInList(entry.player)} : <strong>${entry.count}</strong></span>`
+      )
+      .join("");
+    el.councilRunningTally.innerHTML = `<h4>Résultat actuel du dépouillement</h4><div class="running-tally-row">${lines}</div>`;
   }
 
   function getPhaseEnabled(phase) {
@@ -942,11 +1123,16 @@ Rédige 2 phrases courtes, cohérentes, axées stratégie/alliance, sans invente
       revealIndex: 0,
       revealSequence: shuffle([...councilState.tally.visible]),
       stage: 0,
-      phaseResolved: false
+      phaseResolved: false,
+      runningTally: {}
     };
     el.councilTitle.textContent = `Conseil Tribal - ${getTribeName(councilState.tribeId)}`;
     el.councilLog.innerHTML = "";
     el.councilReveal.classList.add("hidden");
+    if (el.councilRunningTally) {
+      el.councilRunningTally.classList.add("hidden");
+      el.councilRunningTally.innerHTML = "";
+    }
     el.councilContinueButton.classList.remove("hidden");
     el.councilContinueButton.textContent = "Commencer le conseil";
     renderCouncilParticipants(councilState);
@@ -1039,6 +1225,7 @@ Rédige 2 phrases courtes, cohérentes, axées stratégie/alliance, sans invente
   function handleBallotReveal() {
     const c = app.councilInProgress;
     if (!c || c.stage !== 3) return;
+    c.runningTally = c.runningTally || {};
     const ballot = c.revealSequence[c.revealIndex];
     if (!ballot) {
       c.stage = 5;
@@ -1056,6 +1243,10 @@ Rédige 2 phrases courtes, cohérentes, axées stratégie/alliance, sans invente
     const tag = ballot.counted ? "" : " (non comptabilisé)";
     el.ballotText.textContent = `${targetName}${tag}`;
     addCouncilLog(`Bulletin: ${targetName}${tag}`);
+    if (ballot.counted) {
+      c.runningTally[ballot.targetId] = (c.runningTally[ballot.targetId] || 0) + ballot.weight;
+    }
+    renderCouncilRunningTally(c.runningTally);
 
     c.revealIndex += 1;
     el.revealCounter.textContent = `${c.revealIndex} / ${c.revealSequence.length} bulletins`;
@@ -1115,6 +1306,7 @@ Rédige 2 phrases courtes, cohérentes, axées stratégie/alliance, sans invente
     app.councilOccurredThisEpisode = true;
 
     addCouncilLog(`Éliminé: ${eliminated.name}${c.rocksResult ? " (Rocks)" : ""}.`);
+    renderCouncilRunningTally(c.runningTally);
     const table = buildVoteTable(c.votes);
     el.councilLog.appendChild(table);
 
@@ -1235,6 +1427,10 @@ Rédige 2 phrases courtes, cohérentes, axées stratégie/alliance, sans invente
 
     if (phase !== "tribalCouncil") {
       advancePhasePointer();
+      if (app.phaseIndex === 0 || app.phaseIndex === 1) {
+        recordTargetSnapshot();
+      }
+      clearJournalEntryHighlights();
       updateTopBar();
       if (!app.winnerDeclared) {
         el.nextPhaseButton.disabled = false;
@@ -1257,6 +1453,7 @@ Rédige 2 phrases courtes, cohérentes, axées stratégie/alliance, sans invente
     app.humanPlayerId = setup.humanPlayerId;
     app.humanPendingAction = null;
     app.journalCounter = 0;
+    app.targetHistoryByEpisode = {};
     app.jury = [];
     app.finalThreeReached = false;
     app.winnerDeclared = false;
@@ -1271,6 +1468,7 @@ Rédige 2 phrases courtes, cohérentes, axées stratégie/alliance, sans invente
     renderTribesBoard();
     renderHumanTargetOptions();
     updateTopBar();
+    recordTargetSnapshot();
     logJournal(
       "🚀",
       "Départ",
@@ -1296,6 +1494,16 @@ Rédige 2 phrases courtes, cohérentes, axées stratégie/alliance, sans invente
       councilStageRunner();
     });
     el.ballotCard.addEventListener("click", handleBallotReveal);
+    if (el.targetModal) {
+      el.targetModal.addEventListener("close", clearJournalEntryHighlights);
+    }
+    window.addEventListener("resize", () => {
+      if (el.targetModal.open) {
+        const title = el.targetModalTitle.textContent || "";
+        const tribe = [...app.tribes, app.mergeTribe].find((t) => title.includes(t?.name || ""));
+        if (tribe) drawTargetHistoryChart(tribe.id);
+      }
+    });
   }
 
   window.SurvivorGameplay = {

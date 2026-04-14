@@ -789,6 +789,65 @@
     return "";
   }
 
+  async function callOpenAiText(prompt) {
+    const key = String(app.openAi?.key || "").trim();
+    const model = String(app.openAi?.model || "gpt-4.1-mini").trim();
+    if (!key || !prompt) return "";
+    const endpoints = [
+      {
+        url: "https://api.openai.com/v1/responses",
+        buildBody: () => ({
+          model,
+          input: prompt
+        }),
+        parse: extractOpenAiText
+      },
+      {
+        url: "https://api.openai.com/v1/chat/completions",
+        buildBody: () => ({
+          model,
+          messages: [{ role: "user", content: prompt }],
+          temperature: 0.9
+        }),
+        parse: (json) => json?.choices?.[0]?.message?.content || ""
+      }
+    ];
+
+    for (const endpoint of endpoints) {
+      try {
+        const response = await fetch(endpoint.url, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${key}`
+          },
+          body: JSON.stringify(endpoint.buildBody())
+        });
+        if (!response.ok) {
+          let details = "";
+          try {
+            const err = await response.json();
+            details = err?.error?.message || "";
+          } catch (_ignore) {
+            // ignore parse errors
+          }
+          logJournal(
+            "⚠️",
+            "OpenAI",
+            `Réponse API ${response.status}${details ? `: ${details}` : ""}.`
+          );
+          continue;
+        }
+        const json = await response.json();
+        const text = String(endpoint.parse(json) || "").trim();
+        if (text) return text;
+      } catch (error) {
+        logJournal("⚠️", "OpenAI", `Erreur réseau OpenAI: ${escapeHtml(error?.message || "inconnue")}.`);
+      }
+    }
+    return "";
+  }
+
   function getChatPersonality(playerId) {
     if (app.chatState.personalities[playerId]) return app.chatState.personalities[playerId];
     const personalities = [
@@ -885,28 +944,27 @@
   async function buildAiChatReply(human, aiPlayer, userMessage) {
     const personality = getChatPersonality(aiPlayer.id);
     const cleanUserMessage = String(userMessage || "").replace(/[\r\n]+/g, " ").trim();
-    if (!app.openAi.key) {
+    if (!String(app.openAi?.key || "").trim()) {
       return `${aiPlayer.name} : Je note ce que tu dis. On garde ça entre nous pour l'instant.`;
     }
-    try {
-      const conversation = getConversation(aiPlayer.id).slice(-14);
-      const history = conversation
-        .map((msg) => `${msg.author}: ${msg.text}`)
-        .reverse()
-        .join("\n");
-      const strategicContext = buildStrategicContextForChat(human, aiPlayer);
-      const memoryPublic = strategicContext.publicMemory.map((e) => `- ${e.title}: ${e.text}`).join("\n");
-      const memoryHidden = strategicContext.hiddenMemory.map((e) => `- ${e.title}: ${e.text}`).join("\n");
-      const threatNames = strategicContext.keyThreats.map((p) => `${p.name}(${Math.round(p.target)}%)`).join(", ");
-      const trustedNames = strategicContext.trusted.map((p) => p.name).join(", ");
-      const distrustedNames = strategicContext.distrusted.map((p) => p.name).join(", ");
-      const councilContext = strategicContext.recentCouncil
-        .map(
-          (c) =>
-            `E${c.episode}: éliminé=${c.eliminatedName}, score=${c.scoreboardText}, votes=${(c.votes || []).slice(0, 6).join(" ; ")}`
-        )
-        .join("\n");
-      const prompt = `Tu joues ${aiPlayer.name} dans un simulateur Survivor.
+    const conversation = getConversation(aiPlayer.id).slice(-14);
+    const history = conversation
+      .map((msg) => `${msg.author}: ${msg.text}`)
+      .reverse()
+      .join("\n");
+    const strategicContext = buildStrategicContextForChat(human, aiPlayer);
+    const memoryPublic = strategicContext.publicMemory.map((e) => `- ${e.title}: ${e.text}`).join("\n");
+    const memoryHidden = strategicContext.hiddenMemory.map((e) => `- ${e.title}: ${e.text}`).join("\n");
+    const threatNames = strategicContext.keyThreats.map((p) => `${p.name}(${Math.round(p.target)}%)`).join(", ");
+    const trustedNames = strategicContext.trusted.map((p) => p.name).join(", ");
+    const distrustedNames = strategicContext.distrusted.map((p) => p.name).join(", ");
+    const councilContext = strategicContext.recentCouncil
+      .map(
+        (c) =>
+          `E${c.episode}: éliminé=${c.eliminatedName}, score=${c.scoreboardText}, votes=${(c.votes || []).slice(0, 6).join(" ; ")}`
+      )
+      .join("\n");
+    const prompt = `Tu joues ${aiPlayer.name} dans un simulateur Survivor.
 Personnalité: ${personality}.
 Objectif principal: gagner la partie. Tu n'es pas loyal par défaut au joueur humain.
 Tu peux mentir, manipuler, dire la vérité, trahir, proposer des plans clairs.
@@ -928,26 +986,18 @@ Historique privé avec l'humain:
 ${history || "Aucun historique."}
 Message reçu: ${cleanUserMessage}
 Réponds en français en 1 à 4 phrases, utile, stratégique et contextuelle. Si possible, prends position claire. Tu peux faire des erreurs, mais reste cohérent.`;
-      const response = await fetch("https://api.openai.com/v1/responses", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${app.openAi.key}`
-        },
-        body: JSON.stringify({
-          model: app.openAi.model,
-          input: prompt
-        })
-      });
-      if (!response.ok) {
-        return `${aiPlayer.name} : Je préfère rester prudent pour l'instant.`;
-      }
-      const json = await response.json();
-      const text = extractOpenAiText(json).trim();
-      return text || `${aiPlayer.name} : Je garde cette info pour le prochain vote.`;
-    } catch (_e) {
-      return `${aiPlayer.name} : On en reparle près du feu ce soir.`;
-    }
+
+    const openAiText = await callOpenAiText(prompt);
+    if (openAiText) return openAiText;
+
+    // Fallback local contextualisé si OpenAI indisponible.
+    const fallbackThoughts = [
+      `Tu n'as pas encore répondu à ${aiPlayer.name}; ça peut jouer contre toi.`,
+      `${aiPlayer.name} pense que ${threatNames || "personne"} est une menace actuelle.`,
+      `${aiPlayer.name} n'accorde pas sa confiance facilement.`,
+      `${aiPlayer.name} veut un plan concret pour le prochain conseil.`
+    ];
+    return `${aiPlayer.name} : ${pickRandom(fallbackThoughts)}`;
   }
 
   function maybePushAiInitiatedMessage(playerId) {

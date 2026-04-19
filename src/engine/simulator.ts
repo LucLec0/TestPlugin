@@ -100,10 +100,26 @@ function modifyRelationship(
   lastMeaningfulEvent: string,
 ): void {
   const relationship = getRelationship(state, fromId, toId);
-  (Object.entries(deltas) as Array<[keyof Relationship, number]>).forEach(([key, value]) => {
-    if (typeof relationship[key] === "number") {
-      const nextValue = Number(relationship[key]) + value;
-      relationship[key] = clamp(nextValue) as Relationship[keyof Relationship];
+  const numericKeys: Array<keyof Relationship> = [
+    "trust",
+    "closeness",
+    "allianceScore",
+    "suspicion",
+    "admiration",
+    "irritation",
+    "fear",
+    "moralDebt",
+    "reliability",
+    "strategicFit",
+    "grievance",
+    "sharedSecrets",
+    "betrayalsRemembered",
+  ];
+  numericKeys.forEach((key) => {
+    const delta = deltas[key];
+    if (typeof delta === "number") {
+      const current = relationship[key] as number;
+      relationship[key] = clamp(current + delta) as never;
     }
   });
   relationship.lastMeaningfulEvent = lastMeaningfulEvent;
@@ -169,7 +185,7 @@ function refreshAlliances(state: GameState): void {
         lastUpdatedEpisode: state.episode,
       };
     })
-    .filter((alliance): alliance is Alliance => Boolean(alliance) && alliance.strength >= 15);
+    .filter((alliance): alliance is Alliance => alliance !== undefined && alliance.strength >= 15);
 }
 
 function forgeAlliance(state: GameState, memberIds: string[], rng: RNG, summary: EpisodeSummary, tribeId?: string): void {
@@ -349,7 +365,7 @@ function runAdvantageSearch(state: GameState, rng: RNG, summary: EpisodeSummary)
     const advantage: Advantage = {
       id: `adv-${state.episode}-${player.id}-${player.advantages.length + 1}`,
       type: advantageType,
-      label: advantageType.replaceAll("_", " "),
+      label: advantageType.split("_").join(" "),
       description: ADVANTAGE_DESCRIPTIONS[advantageType],
       holderId: player.id,
       knownBy: [player.id],
@@ -456,12 +472,13 @@ function personalTargetScore(state: GameState, voter: Player, target: Player, im
 
 function buildVotePlans(state: GameState, group: Player[], immuneIds: Set<string>, rng: RNG): VotePlan[] {
   const groupIds = group.map((player) => player.id);
-  return activeAlliancesInGroup(state, groupIds)
+  const plans: VotePlan[] = [];
+  activeAlliancesInGroup(state, groupIds)
     .filter((alliance) => alliance.members.length >= 2)
-    .map((alliance) => {
+    .forEach((alliance) => {
       const outsiders = group.filter((player) => !alliance.members.includes(player.id) && !immuneIds.has(player.id));
       if (outsiders.length === 0) {
-        return undefined;
+        return;
       }
       const target = outsiders
         .map((candidate) => ({
@@ -470,7 +487,7 @@ function buildVotePlans(state: GameState, group: Player[], immuneIds: Set<string
         }))
         .sort((a, b) => b.score - a.score)[0]?.candidate;
       if (!target) {
-        return undefined;
+        return;
       }
       const altTarget = outsiders.filter((player) => player.id !== target.id).sort((a, b) => {
         const aScore = average(alliance.members.map((memberId) => personalTargetScore(state, getPlayer(state, memberId), a, immuneIds)));
@@ -478,17 +495,16 @@ function buildVotePlans(state: GameState, group: Player[], immuneIds: Set<string
         return bScore - aScore;
       })[0];
       const idolConcern = target.traits.riskTolerance * 0.22 + target.traits.focus * 0.15 + target.idolFinds * 18 + rng.centeredNoise(8);
-      return {
+      plans.push({
         allianceId: alliance.id,
         memberIds: alliance.members,
         targetId: target.id,
         altTargetId: altTarget?.id,
         confidence: clamp(alliance.strength * 0.45 + alliance.trust * 0.35 - alliance.fractureRisk * 0.2),
         splitVote: Boolean(altTarget && alliance.members.length >= 4 && idolConcern > 56),
-      } satisfies VotePlan;
-    })
-    .filter((plan): plan is VotePlan => Boolean(plan))
-    .sort((a, b) => b.memberIds.length * b.confidence - a.memberIds.length * a.confidence);
+      });
+    });
+  return plans.sort((a, b) => b.memberIds.length * b.confidence - a.memberIds.length * a.confidence);
 }
 
 function predictDanger(state: GameState, group: Player[], immuneIds: Set<string>): Record<string, number> {

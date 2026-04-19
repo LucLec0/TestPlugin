@@ -2,11 +2,11 @@ import type { Alliance, EventLog, GameState, Player, Relationship, Tribe } from 
 import { formatPercent, playerMapById, tribeMapById } from "../utils";
 
 interface SeasonDashboardProps {
-  state: GameState;
-  onNextEpisode: () => void;
-  onRunSeason: () => void;
-  onSave: () => void;
-  canAdvance: boolean;
+  season: GameState | null;
+  onNewSeason: () => void;
+  onSimulateEpisode: () => void;
+  onSimulateFullSeason: () => void;
+  onClearSeason: () => void;
 }
 
 function sortedActivePlayers(state: GameState): Player[] {
@@ -53,11 +53,42 @@ function allianceMembers(alliance: Alliance, playerById: Record<string, Player>)
   return alliance.members.map((memberId) => playerById[memberId]?.name ?? memberId).join(", ");
 }
 
-export function SeasonDashboard({ state, onNextEpisode, onRunSeason, onSave, canAdvance }: SeasonDashboardProps) {
+export function SeasonDashboard({
+  season,
+  onNewSeason,
+  onSimulateEpisode,
+  onSimulateFullSeason,
+  onClearSeason,
+}: SeasonDashboardProps) {
+  if (!season) {
+    return (
+      <div className="dashboard">
+        <section className="hero-card">
+          <div>
+            <div className="eyebrow">Aucune saison active</div>
+            <h1>Pret a simuler</h1>
+            <p>
+              Cree une saison pour voir les relations se construire, les alliances se former et les conseils tribaux
+              prendre vie.
+            </p>
+          </div>
+          <div className="hero-actions">
+            <button onClick={onNewSeason}>Creer une saison</button>
+            <button className="secondary" onClick={onSimulateFullSeason}>
+              Generer puis simuler toute la saison
+            </button>
+          </div>
+        </section>
+      </div>
+    );
+  }
+
+  const state = season;
   const playerById = playerMapById(state.players);
   const tribeById = tribeMapById(state.tribes);
   const winner = state.winnerId ? playerById[state.winnerId] : undefined;
   const latestEpisode = state.episodes[state.episodes.length - 1];
+  const canAdvance = state.phase !== "complete";
 
   return (
     <div className="dashboard">
@@ -76,14 +107,14 @@ export function SeasonDashboard({ state, onNextEpisode, onRunSeason, onSave, can
           </div>
         </div>
         <div className="hero-actions">
-          <button onClick={onNextEpisode} disabled={!canAdvance}>
+          <button onClick={onSimulateEpisode} disabled={!canAdvance}>
             Simuler l'episode suivant
           </button>
-          <button className="secondary" onClick={onRunSeason} disabled={!canAdvance}>
+          <button className="secondary" onClick={onSimulateFullSeason} disabled={!canAdvance}>
             Simuler toute la saison
           </button>
-          <button className="ghost" onClick={onSave}>
-            Sauvegarder
+          <button className="ghost" onClick={onClearSeason}>
+            Effacer la saison
           </button>
         </div>
       </section>

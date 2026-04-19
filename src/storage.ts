@@ -34,3 +34,19 @@ export function loadState(): GameState | null {
     return null;
   }
 }
+
+export function loadSavedConfig(): GameConfig | null {
+  return loadConfig();
+}
+
+export function loadSavedSeason(): GameState | null {
+  return loadState();
+}
+
+export function saveSeason(state: GameState | null): void {
+  if (state) {
+    saveState(state);
+    return;
+  }
+  localStorage.removeItem(STATE_KEY);
+}

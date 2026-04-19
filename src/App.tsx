@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { ADVANTAGE_LABELS, TRAIT_GROUPS, TRAIT_KEYS, type AdvantageType, type GameConfig, type GameState } from "./types";
+import { ADVANTAGE_LABELS, TRAIT_KEYS, type AdvantageType, type GameConfig, type GameState } from "./types";
 import { createDefaultConfig, buildGame, randomizeRoster, syncManualPlayers } from "./engine/generator";
 import { simulateFullSeason, simulateNextEpisode } from "./engine/simulator";
 import { emptyBlueprint } from "./data/presets";
@@ -7,7 +7,6 @@ import { loadSavedConfig, loadSavedSeason, saveConfig, saveSeason } from "./stor
 import { PlayerEditor } from "./components/PlayerEditor";
 import { SeasonDashboard } from "./components/SeasonDashboard";
 import { averageBy, clampNumber } from "./utils";
-import "./styles.css";
 
 function normalizeConfig(config: GameConfig): GameConfig {
   const playerCount = clampNumber(config.playerCount, 8, 20);
@@ -310,8 +309,6 @@ function App() {
               {editingIndex !== null && normalizedConfig.manualPlayers[editingIndex] ? (
                 <PlayerEditor
                   player={normalizedConfig.manualPlayers[editingIndex]}
-                  index={editingIndex}
-                  traitGroups={TRAIT_GROUPS}
                   onChange={(updatedPlayer) =>
                     updateConfig((previous) => {
                       const manualPlayers = syncManualPlayers(previous);
